@@ -7,7 +7,7 @@ on:
       - 'android/**'
       - '.github/workflows/android-arm64-bringup.yml'
 concurrency:
-  group: shaolin-android-preview-${{ github.ref }}
+  group: shaolin-android-preview-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 permissions:
   contents: read
