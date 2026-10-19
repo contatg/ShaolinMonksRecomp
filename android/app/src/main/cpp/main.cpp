@@ -1,7 +1,7 @@
 // Android SDL3/Vulkan presentation bringup.
 // This is a visible renderer test, NOT an executable Xbox game port.
 // No proprietary game data or generated Xbox code is linked in this build.
-#include <SDL3/SDL.h>
+#include "xbox_bootstrap.h"\n#include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_vulkan.h>
 #include <android/log.h>
@@ -398,6 +398,10 @@ int main(int argc, char** argv) {
     SMLOG("Launcher preferences: FPS=%d (active), future game scale=%d%% (not yet applied)",
           fps_limit, render_preference);
     ProbeXboxSource(source_fd);
+    // Stage one of real Xbox boot: read original game, verify the audited XBE,
+    // and populate the guest RAM image. No CPU dispatch is attempted yet.
+    if (source_fd >= 0 && !shaolin_android::PrepareXboxImage(source_fd))
+        SMERR("Xbox guest image preboot failed; rendering test remains available.");
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS)) {
         SMERR("SDL_Init: %s", SDL_GetError());
