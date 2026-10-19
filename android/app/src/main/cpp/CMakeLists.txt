@@ -16,7 +16,12 @@ set(XBE_SDK "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/XboxXBERecomp")
 if(NOT EXISTS "${XBE_SDK}/runtime/kernel/disc.cpp")
     message(FATAL_ERROR "Pinned XboxXBERecomp runtime not found. Fetch it before configuring Android.")
 endif()
-add_library(main SHARED main.cpp "${XBE_SDK}/runtime/kernel/disc.cpp")
+add_library(main SHARED
+    main.cpp
+    xbox_bootstrap.cpp
+    "${XBE_SDK}/runtime/kernel/disc.cpp"
+    "${XBE_SDK}/runtime/kernel/memory.cpp"
+    "${XBE_SDK}/runtime/core/log.cpp")
 target_include_directories(main PRIVATE "${XBE_SDK}/runtime")
 target_link_libraries(main PRIVATE SDL3::SDL3 ${android-lib} ${log-lib} ${vulkan-lib})
 target_link_options(main PRIVATE -Wl,-z,max-page-size=16384)
