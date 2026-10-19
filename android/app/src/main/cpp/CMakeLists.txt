@@ -23,5 +23,9 @@ add_library(main SHARED
     "${XBE_SDK}/runtime/kernel/memory.cpp"
     "${XBE_SDK}/runtime/core/log.cpp")
 target_include_directories(main PRIVATE "${XBE_SDK}/runtime")
+# Upstream POSIX guest allocator uses ftruncate but does not include unistd.h.
+# Inject the Android POSIX declaration only for this source, preserving SDK files.
+set_source_files_properties("${XBE_SDK}/runtime/kernel/memory.cpp"
+    PROPERTIES COMPILE_OPTIONS "-include;unistd.h")
 target_link_libraries(main PRIVATE SDL3::SDL3 ${android-lib} ${log-lib} ${vulkan-lib})
 target_link_options(main PRIVATE -Wl,-z,max-page-size=16384)
