@@ -269,3 +269,5 @@ bool PrepareXboxImage(int fd) {
     XB_INFO("PREBOOT READY. Guest x86 code has NOT started; static recompilation dispatcher and kernel/XDK remain unlinked.");
     return true;
 }
+
+} // namespace shaolin_android
