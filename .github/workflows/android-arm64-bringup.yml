@@ -1,4 +1,4 @@
-name: Android ARM64 Vulkan bringup
+name: Android ARM64 Shaolin Mobiu preview
 on:
   workflow_dispatch:
   push:
@@ -46,6 +46,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: Shaolin-Mobiu-Vulkan-Test-ARM64
+          name: Shaolin-Mobiu-Launcher-ARM64
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
