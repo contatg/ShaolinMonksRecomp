@@ -1,7 +1,8 @@
 // Android SDL3/Vulkan presentation bringup.
 // This is a visible renderer test, NOT an executable Xbox game port.
 // No proprietary game data or generated Xbox code is linked in this build.
-#include "xbox_bootstrap.h"\n#include <SDL3/SDL.h>
+#include "xbox_bootstrap.h"
+#include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_vulkan.h>
 #include <android/log.h>
