@@ -6,6 +6,9 @@ on:
     paths:
       - 'android/**'
       - '.github/workflows/android-arm64-bringup.yml'
+concurrency:
+  group: shaolin-android-preview-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
