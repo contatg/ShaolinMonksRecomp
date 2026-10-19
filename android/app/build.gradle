@@ -1,0 +1,58 @@
+plugins {
+    id "com.android.application"
+}
+
+// Same SDL3 release as the upstream recompiler, and a separate checkout
+// so the unmodified PC build does not share Android build dependencies.
+def sdlDir = file("../third_party/SDL")
+tasks.register("fetchSDL") {
+    onlyIf { !new File(sdlDir, "CMakeLists.txt").exists() }
+    doLast {
+        exec {
+            commandLine "git", "clone", "--depth", "1", "--branch", "release-3.4.16",
+                        "https://github.com/libsdl-org/SDL.git", sdlDir.absolutePath
+        }
+    }
+}
+preBuild.dependsOn "fetchSDL"
+
+android {
+    namespace "org.shaolinmobiu"
+    compileSdk 34
+    ndkVersion "28.2.13676358"
+
+    defaultConfig {
+        applicationId "org.shaolinmobiu"
+        minSdk 30
+        targetSdk 34
+        versionCode 1
+        versionName "0.0.1-renderer-test"
+        ndk { abiFilters "arm64-v8a" }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.31.6"
+        }
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs += new File(sdlDir, "android-project/app/src/main/java")
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
