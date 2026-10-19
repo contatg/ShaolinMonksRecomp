@@ -11,11 +11,58 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
+#include <cerrno>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <cstring>
 #include <vector>
 
 #define SMLOG(...) __android_log_print(ANDROID_LOG_INFO, "ShaolinMobiu", __VA_ARGS__)
 #define SMERR(...) __android_log_print(ANDROID_LOG_ERROR, "ShaolinMobiu", __VA_ARGS__)
+
+
+// Inspect the original selected Xbox source through the descriptor opened by
+// Android's Storage Access Framework. No file is copied, changed or embedded.
+// Actual game execution is not implemented in this preview yet.
+void ProbeXboxSource(int fd) {
+    if (fd < 0) return;
+    struct stat st{};
+    if (fstat(fd, &st) != 0) {
+        SMERR("Game source fstat failed (errno=%d)", errno);
+        return;
+    }
+    SMLOG("Game source FD=%d, reported size=%lld bytes", fd, (long long)st.st_size);
+
+    unsigned char prefix[20]{};
+    const ssize_t bytes = pread(fd, prefix, sizeof(prefix), 0);
+    if (bytes < 0) {
+        SMERR("Game source does not support positional read (errno=%d); provider may be streaming", errno);
+        return;
+    }
+    if (bytes >= 4 && std::memcmp(prefix, "XBEH", 4) == 0) {
+        SMLOG("Detected original Xbox XBE header. SHA256 must be validated in launcher.");
+        return;
+    }
+    if (bytes >= 4 && prefix[0] == 'P' && prefix[1] == 'K' &&
+        ((prefix[2] == 3 && prefix[3] == 4) ||
+         (prefix[2] == 5 && prefix[3] == 6))) {
+        SMLOG("Detected ZIP signature. Xbox game archive import not yet implemented.");
+        return;
+    }
+    static constexpr unsigned char dvd_magic[] = "MICROSOFT*XBOX*MEDIA";
+    static constexpr off_t bases[] = {0, 0x18300000, 0x0FD90000, 0x02080000};
+    for (off_t base : bases) {
+        unsigned char volume[sizeof(dvd_magic) - 1]{};
+        const ssize_t len = pread(fd, volume, sizeof(volume), base + 32 * 2048);
+        if (len == sizeof(volume) && std::memcmp(volume, dvd_magic, sizeof(volume)) == 0) {
+            SMLOG("Detected Xbox XDVDFS disc image at partition offset %lld",
+                  (long long)base);
+            SMLOG("Disc source is now accessible to native code without duplicating its data.");
+            return;
+        }
+    }
+    SMERR("Selected file is not a recognized XBE, ZIP or XDVDFS image.");
+}
 
 namespace {
 
@@ -335,6 +382,7 @@ struct Renderer {
 int main(int argc, char** argv) {
     int fps_limit = 60;
     int render_preference = 75;
+    int source_fd = -1;
     for (int i = 1; i + 1 < argc; ++i) {
         if (!std::strcmp(argv[i], "--fps")) {
             int input = std::atoi(argv[++i]);
@@ -342,10 +390,14 @@ int main(int argc, char** argv) {
         } else if (!std::strcmp(argv[i], "--scale")) {
             int input = std::atoi(argv[++i]);
             if (input == 50 || input == 75 || input == 100) render_preference = input;
+         else if (!std::strcmp(argv[i], "--game-fd")) {
+            const int fd = std::atoi(argv[++i]);
+            if (fd >= 0 && fd < 1048576) source_fd = fd;
         }
     }
     SMLOG("Launcher preferences: FPS=%d (active), future game scale=%d%% (not yet applied)",
           fps_limit, render_preference);
+    ProbeXboxSource(source_fd);
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS)) {
         SMERR("SDL_Init: %s", SDL_GetError());
