@@ -122,7 +122,7 @@ bool ReadStandaloneXbe(int fd, std::vector<uint8_t>& xbe) {
     return xbe.size() >= 0x180;
 }
 
-bool ReadGameImage(int source_fd, std::vector<uint8_t>& xbe) {
+bool ReadGameImage(int source_fd, std::vector<uint8_t>& xbe, std::unique_ptr<kernel::Disc>& disc_for_boot) {
     uint8_t magic[4]{};
     if (pread(source_fd, magic, sizeof magic, 0) != sizeof magic) {
         XB_ERR("Cannot read selected file header (non-seekable provider?)");
@@ -141,25 +141,25 @@ bool ReadGameImage(int source_fd, std::vector<uint8_t>& xbe) {
     // upstream Disc::Open reopens it read-only to own the file lifetime.
     // Most local SAF providers expose a seekable regular file this way.
     const std::string fd_path = "/proc/self/fd/" + std::to_string(source_fd);
-    kernel::Disc disc;
+    auto disc = std::make_unique<kernel::Disc>();
     std::string error;
-    if (!disc.Open(fd_path, error)) {
+    if (!disc->Open(fd_path, error)) {
         XB_ERR("XDVDFS cannot open selected disc: %s (SAF provider may be non-seekable)", error.c_str());
         return false;
     }
-    const kernel::Disc::Entry* entry = disc.Find("default.xbe");
+    const kernel::Disc::Entry* entry = disc->Find("default.xbe");
     if (!entry || entry->dir || entry->size < 0x180 || entry->size > kMaxXbeBytes) {
         XB_ERR("XDVDFS has no valid default.xbe entry");
         return false;
     }
-    if (!disc.Load("default.xbe", xbe)) {
+    if (!disc->Load("default.xbe", xbe)) {
         XB_ERR("XDVDFS could not load default.xbe");
         return false;
     }
     XB_INFO("XDVDFS parsed, default.xbe extracted to RAM (%zu bytes)", xbe.size());
 
-    // Do not mount this local Disc object as a global object yet; the current
-    // APK has no game thread and the reader would lose its source lifetime.
+    // Keep ownership until the hash and XBE structure have been verified.
+    disc_for_boot = std::move(disc);
     return true;
 }
 
@@ -215,7 +215,8 @@ bool PrepareXboxImage(int fd) {
         return false;
     }
     std::vector<uint8_t> original_xbe;
-    if (!ReadGameImage(fd, original_xbe)) {
+    std::unique_ptr<kernel::Disc> disc_for_boot;
+    if (!ReadGameImage(fd, original_xbe, disc_for_boot)) {
         XB_ERR("PREBOOT FAILED: cannot read the original game executable");
         return false;
     }
@@ -258,6 +259,10 @@ bool PrepareXboxImage(int fd) {
         if (!count) continue;
         std::memcpy(guest + section.va, img.file.data() + section.raw, count);
         ++loaded;
+    }
+    if (disc_for_boot) {
+        kernel::MountDisc(std::move(disc_for_boot));
+        XB_INFO("XDVDFS filesystem mounted read-only for future Xbox kernel file access");
     }
     XB_INFO("Xbox guest image loaded: %zu preload sections, entry=0x%08x, guest base=%p",
             loaded, img.entry, static_cast<void*>(guest));
