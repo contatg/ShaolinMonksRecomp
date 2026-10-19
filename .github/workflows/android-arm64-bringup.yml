@@ -43,6 +43,16 @@ jobs:
         run: |
           git clone --depth 1 --branch release-3.4.16 https://github.com/libsdl-org/SDL.git android/third_party/SDL
           test -f android/third_party/SDL/CMakeLists.txt
+      - name: Fetch pinned portable Xbox disc reader
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android/third_party/XboxXBERecomp
+          git -C android/third_party/XboxXBERecomp init
+          git -C android/third_party/XboxXBERecomp remote add origin https://github.com/TGP482/XboxXBERecomp.git
+          git -C android/third_party/XboxXBERecomp fetch --depth 1 origin 40e9c35451305f09ca9d86f677e4b9c2c37ff26b
+          git -C android/third_party/XboxXBERecomp checkout --detach FETCH_HEAD
+          test -f android/third_party/XboxXBERecomp/runtime/kernel/disc.cpp
       - name: Build Android Vulkan test APK
         working-directory: android
         run: gradle --no-daemon assembleDebug --stacktrace
