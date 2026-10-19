@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -331,7 +332,20 @@ struct Renderer {
 
 } // namespace
 
-int main(int, char**) {
+int main(int argc, char** argv) {
+    int fps_limit = 60;
+    int render_preference = 75;
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (!std::strcmp(argv[i], "--fps")) {
+            int input = std::atoi(argv[++i]);
+            fps_limit = input == 30 ? 30 : 60;
+        } else if (!std::strcmp(argv[i], "--scale")) {
+            int input = std::atoi(argv[++i]);
+            if (input == 50 || input == 75 || input == 100) render_preference = input;
+        }
+    }
+    SMLOG("Launcher preferences: FPS=%d (active), future game scale=%d%% (not yet applied)",
+          fps_limit, render_preference);
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS)) {
         SMERR("SDL_Init: %s", SDL_GetError());
@@ -392,7 +406,7 @@ int main(int, char**) {
                     result = 4;
                     break;
                 }
-                SDL_Delay(16);
+                SDL_Delay(fps_limit == 30 ? 33 : 16);
             }
         }
     }
