@@ -1,9 +1,22 @@
 package org.shaolinmobiu;
 
 import android.content.SharedPreferences;
+import android.net.Uri;
+import android.os.ParcelFileDescriptor;
+import android.util.Log;
 import org.libsdl.app.SDLActivity;
 
+import java.io.IOException;
+import java.util.ArrayList;
+
+/**
+ * Keeps the user-granted game file descriptor alive while the native SDL activity runs.
+ * The original ISO/XBE is not copied and does not require broad storage permission.
+ */
 public final class ShaolinActivity extends SDLActivity {
+    private static final String TAG = "ShaolinMobiu";
+    private ParcelFileDescriptor gameDescriptor;
+
     @Override
     protected String[] getLibraries() {
         return new String[] {"SDL3", "main"};
@@ -14,9 +27,43 @@ public final class ShaolinActivity extends SDLActivity {
         SharedPreferences prefs = getSharedPreferences(LauncherActivity.PREFERENCES, MODE_PRIVATE);
         int fps = prefs.getInt(LauncherActivity.KEY_FPS, 60);
         int scale = prefs.getInt(LauncherActivity.KEY_RESOLUTION, 75);
-        return new String[] {
-            "--fps", Integer.toString(fps == 30 ? 30 : 60),
-            "--scale", Integer.toString(scale)
-        };
+        ArrayList<String> args = new ArrayList<>();
+        args.add("--fps");
+        args.add(Integer.toString(fps == 30 ? 30 : 60));
+        args.add("--scale");
+        args.add(Integer.toString(scale));
+
+        final String uriText = prefs.getString(LauncherActivity.KEY_GAME_URI, "");
+        final String kind = prefs.getString(LauncherActivity.KEY_GAME_KIND, "");
+        if ("file".equals(kind) && !uriText.isEmpty()) {
+            try {
+                // The SDL thread and the native main entry share the same Linux process.
+                // Native code can read this fd with pread; Java owns and closes it.
+                if (gameDescriptor == null) {
+                    gameDescriptor = getContentResolver().openFileDescriptor(Uri.parse(uriText), "r");
+                }
+                if (gameDescriptor != null) {
+                    args.add("--game-fd");
+                    args.add(Integer.toString(gameDescriptor.getFd()));
+                    Log.i(TAG, "Read-only Xbox game source opened for native validation");
+                }
+            } catch (SecurityException | IOException | IllegalArgumentException e) {
+                Log.e(TAG, "Cannot open saved game document permission: " + e.getClass().getSimpleName());
+            }
+        }
+        return args.toArray(new String[0]);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (gameDescriptor != null) {
+            try {
+                gameDescriptor.close();
+            } catch (IOException e) {
+                Log.w(TAG, "Failed to close game descriptor", e);
+            }
+            gameDescriptor = null;
+        }
     }
 }
