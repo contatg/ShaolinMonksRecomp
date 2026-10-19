@@ -390,7 +390,7 @@ int main(int argc, char** argv) {
         } else if (!std::strcmp(argv[i], "--scale")) {
             int input = std::atoi(argv[++i]);
             if (input == 50 || input == 75 || input == 100) render_preference = input;
-         else if (!std::strcmp(argv[i], "--game-fd")) {
+        } else if (!std::strcmp(argv[i], "--game-fd")) {
             const int fd = std::atoi(argv[++i]);
             if (fd >= 0 && fd < 1048576) source_fd = fd;
         }
