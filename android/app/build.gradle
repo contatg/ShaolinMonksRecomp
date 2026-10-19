@@ -28,6 +28,12 @@ android {
         versionCode 2
         versionName "0.1.0-launcher-preview"
         ndk { abiFilters "arm64-v8a" }
+        externalNativeBuild {
+            cmake {
+                arguments "-DSHAOLIN_ENABLE_GUEST_OBJECTS=" +
+                    (project.findProperty("shaolinGuestObjects") == "true" ? "ON" : "OFF")
+            }
+        }
     }
 
     buildTypes {
