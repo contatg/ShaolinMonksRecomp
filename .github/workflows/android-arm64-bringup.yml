@@ -18,16 +18,26 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Install Android tools
-        run: sdkmanager --install "platforms;android-34" "ndk;28.2.13676358" "cmake;3.31.6"
+      - name: Install Android tools using the runner SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          command -v sdkmanager
+          sdkmanager --install "platforms;android-34" "ndk;28.2.13676358" "cmake;3.31.6"
+      - name: Fetch SDL3 before Gradle configuration
+        shell: bash
+        run: |
+          git clone --depth 1 --branch release-3.4.16 https://github.com/libsdl-org/SDL.git android/third_party/SDL
+          test -f android/third_party/SDL/CMakeLists.txt
       - name: Build Android Vulkan test APK
         working-directory: android
         run: gradle --no-daemon assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: Shaolin-Mobiu-Vulkan-Test-ARM64
           path: android/app/build/outputs/apk/debug/app-debug.apk
