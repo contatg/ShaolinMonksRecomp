@@ -7,7 +7,7 @@ set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_RENDER OFF CACHE BOOL "" FORCE)
 set(SDL_GPU OFF CACHE BOOL "" FORCE)
 set(SDL_CAMERA OFF CACHE BOOL "" FORCE)
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../../../../third_party/SDL"
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/SDL"
                  "${CMAKE_CURRENT_BINARY_DIR}/SDL" EXCLUDE_FROM_ALL)
 find_library(android-lib android REQUIRED)
 find_library(log-lib log REQUIRED)
