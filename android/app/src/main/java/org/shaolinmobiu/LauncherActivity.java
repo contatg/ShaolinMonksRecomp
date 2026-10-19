@@ -52,6 +52,7 @@ public final class LauncherActivity extends Activity {
     private SharedPreferences prefs;
     private LinearLayout root;
     private TextView gameDetails;
+    private String verificationStatus = "";
     private LinearLayout resOptions;
     private LinearLayout fpsOptions;
 
@@ -194,6 +195,8 @@ public final class LauncherActivity extends Activity {
             verticalParams(0, 0));
         game.addView(button("Selecionar pasta extraída", false, this::chooseFolder),
             verticalParams(9, 0));
+        game.addView(button("Verificar arquivo selecionado", false, this::inspectSelectedGame),
+            verticalParams(9, 0));
         root.addView(game);
         refreshGameDetails();
 
@@ -324,7 +327,9 @@ public final class LauncherActivity extends Activity {
         }
         prefs.edit().putString(KEY_GAME_URI, uri.toString())
             .putString(KEY_GAME_NAME, name).putString(KEY_GAME_KIND, type).apply();
+        verificationStatus = "";
         refreshGameDetails();
+        inspectSelectedGame();
     }
 
     private String getDocumentName(Uri uri) {
@@ -345,7 +350,27 @@ public final class LauncherActivity extends Activity {
         String kind = prefs.getString(KEY_GAME_KIND, "file").equals("folder") ? "Pasta" : "Arquivo";
         gameDetails.setText("✓  " + kind + " selecionado: " +
             prefs.getString(KEY_GAME_NAME, "Jogo") +
-            "\nAcesso salvo no Android. A importação pelo motor Xbox ainda não está disponível.");
+            "\n" + (verificationStatus.isEmpty()
+                ? "Acesso salvo no Android. Toque em Verificar arquivo para analisar."
+                : verificationStatus) +
+            "\nO motor Xbox ainda não executa este conteúdo no Android.");
+    }
+
+    private void inspectSelectedGame() {
+        String document = prefs.getString(KEY_GAME_URI, "");
+        if (document.isEmpty()) {
+            Toast.makeText(this, "Selecione primeiro o arquivo original do Xbox.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        verificationStatus = "Verificando a fonte selecionada em segundo plano…";
+        refreshGameDetails();
+        GameSourceInspector.inspect(this, Uri.parse(document),
+            prefs.getString(KEY_GAME_NAME, ""), prefs.getString(KEY_GAME_KIND, "file"),
+            result -> {
+                if (!document.equals(prefs.getString(KEY_GAME_URI, ""))) return;
+                verificationStatus = result;
+                refreshGameDetails();
+            });
     }
 
     private void startNative() {
