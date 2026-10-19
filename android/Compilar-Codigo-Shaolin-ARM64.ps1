@@ -25,6 +25,23 @@ Write-Host "[1/3] Checking genuine Shaolin Monks XBE and generating C++ privatel
 & powershell -NoProfile -ExecutionPolicy Bypass -File $verify -Xbe $source -Llvm $Llvm -Jobs $Jobs
 if ($LASTEXITCODE -ne 0) { throw "The original Xbox recompiler failed ($LASTEXITCODE)" }
 
+# Android Gradle/CMake expects its own checkout under android/third_party.
+# Reuse the exact pinned SDK downloaded by the host tool through a Windows
+# directory junction so we neither clone the SDK twice nor use an unpinned HEAD.
+$androidSdk = Join-Path $android "third_party\\XboxXBERecomp"
+$sourceSdk = Join-Path $root "third_party\\XboxXBERecomp"
+if (-not (Test-Path (Join-Path $sourceSdk "runtime\\kernel\\disc.cpp"))) {
+    throw "Pinned Xbox runtime is missing: $sourceSdk"
+}
+if (-not (Test-Path (Join-Path $androidSdk "runtime\\kernel\\disc.cpp"))) {
+    if (Test-Path $androidSdk) { throw "Android runtime directory exists but is incomplete: $androidSdk" }
+    New-Item -ItemType Directory -Path (Split-Path $androidSdk -Parent) -Force | Out-Null
+    New-Item -ItemType Junction -Path $androidSdk -Target $sourceSdk | Out-Null
+}
+if (-not (Test-Path (Join-Path $androidSdk "runtime\\kernel\\disc.cpp"))) {
+    throw "Android guest runtime is not accessible: $androidSdk"
+}
+
 Write-Host "[2/3] Configuring Android ARM64 guest code, plus existing launcher" -ForegroundColor Cyan
 Push-Location $android
 try {
