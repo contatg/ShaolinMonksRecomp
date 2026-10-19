@@ -26,8 +26,15 @@ jobs:
         run: |
           set -euo pipefail
           echo "ANDROID_HOME=${ANDROID_HOME}"
-          command -v sdkmanager
-          sdkmanager --install "platforms;android-34" "ndk;28.2.13676358" "cmake;3.31.6"
+          SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::Android sdkmanager not found under ${ANDROID_HOME}/cmdline-tools"
+            find "${ANDROID_HOME}" -maxdepth 3 -type d | head -70
+            exit 1
+          fi
+          echo "Using SDK manager: $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" --install "platforms;android-34" "ndk;28.2.13676358" "cmake;3.31.6"
       - name: Fetch SDL3 before Gradle configuration
         shell: bash
         run: |
