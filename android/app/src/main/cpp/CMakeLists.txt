@@ -29,3 +29,6 @@ set_source_files_properties("${XBE_SDK}/runtime/kernel/memory.cpp"
     PROPERTIES COMPILE_OPTIONS "-include;unistd.h")
 target_link_libraries(main PRIVATE SDL3::SDL3 ${android-lib} ${log-lib} ${vulkan-lib})
 target_link_options(main PRIVATE -Wl,-z,max-page-size=16384)
+
+# Locally generated real Shaolin guest code; never part of the public test APK.
+include("${CMAKE_CURRENT_SOURCE_DIR}/shaolin_guest.cmake")
