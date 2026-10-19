@@ -75,3 +75,11 @@ __pycache__/
 Thumbs.db
 Desktop.ini
 ._*
+
+# Android local builds and private Xbox translations
+/android/generated/
+/android/third_party/
+/android/.gradle/
+/android/.cxx/
+/android/app/.cxx/
+/android/app/build/
