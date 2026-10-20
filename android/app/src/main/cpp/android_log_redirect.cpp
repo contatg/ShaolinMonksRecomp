@@ -70,13 +70,16 @@ void StartXboxLogcat() {
             } catch (const std::exception& err) {
                 __android_log_print(ANDROID_LOG_FATAL, "ShaolinXboxKernel",
                                     "UNCAUGHT XBOX/HOST EXCEPTION: %s", err.what());
+                shaolin_android::Trace("UNCAUGHT_XBOX_EXCEPTION %s", err.what());
             } catch (...) {
                 __android_log_write(ANDROID_LOG_FATAL, "ShaolinXboxKernel",
                                     "UNCAUGHT UNKNOWN XBOX/HOST EXCEPTION");
+                shaolin_android::Trace("UNCAUGHT_XBOX_EXCEPTION unknown");
             }
         } else {
             __android_log_write(ANDROID_LOG_FATAL, "ShaolinXboxKernel",
                                 "std::terminate in Xbox/HLE guest thread");
+            shaolin_android::Trace("UNCAUGHT_XBOX_EXCEPTION std::terminate no active exception");
         }
         std::abort();
     });
