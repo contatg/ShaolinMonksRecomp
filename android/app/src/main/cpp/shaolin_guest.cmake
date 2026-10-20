@@ -54,6 +54,34 @@ if(SHAOLIN_ENABLE_GUEST_OBJECTS)
         "${SHAOLIN_REPO_ROOT}/src/mods/routine_bridge.h")
     set_target_properties(shaolin_guest_arm64 PROPERTIES
         POSITION_INDEPENDENT_CODE ON)
+
+    # The portable Xbox x86 dispatcher implements kernel calls, guest indirect
+    # calls, CPUID, guest TSC and privileged-instruction handling. The upstream
+    # dispatch.cpp unnecessarily includes x86intrin.h even though this source
+    # uses no host x86 intrinsic. Prepare an Android-specific build copy without
+    # modifying or pin-diverging the original XboxXBERecomp checkout.
+    set(SHAOLIN_DISPATCH_ORIGINAL "${XBE_SDK}/runtime/cpu/dispatch.cpp")
+    if(NOT EXISTS "${SHAOLIN_DISPATCH_ORIGINAL}")
+        message(FATAL_ERROR "XboxXBERecomp CPU dispatcher is missing")
+    endif()
+    file(READ "${SHAOLIN_DISPATCH_ORIGINAL}" SHAOLIN_DISPATCH_SOURCE)
+    string(REPLACE "#include <x86intrin.h>"
+        "// No x86 host intrinsics are used; this port targets ARM64."
+        SHAOLIN_DISPATCH_SOURCE "${SHAOLIN_DISPATCH_SOURCE}")
+    set(SHAOLIN_DISPATCH_ANDROID "${CMAKE_CURRENT_BINARY_DIR}/shaolin_dispatch_android.cpp")
+    file(WRITE "${SHAOLIN_DISPATCH_ANDROID}" "${SHAOLIN_DISPATCH_SOURCE}")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${SHAOLIN_DISPATCH_ORIGINAL}")
+    add_library(shaolin_dispatch_arm64 OBJECT EXCLUDE_FROM_ALL
+        "${SHAOLIN_DISPATCH_ANDROID}")
+    target_include_directories(shaolin_dispatch_arm64 PRIVATE
+        "${XBE_SDK}/runtime" "${SHAOLIN_PRIVATE_GEN}")
+    target_compile_options(shaolin_dispatch_arm64 PRIVATE
+        -O1 -fno-strict-aliasing -fsigned-char)
+    set_target_properties(shaolin_dispatch_arm64 PROPERTIES
+        POSITION_INDEPENDENT_CODE ON)
+    # Both object targets are only compiled locally, not packaged into a
+    # playable APK before full kernel/XDK and graphics integration.
     message(STATUS
         "Shaolin guest ARM64: 128 recomp partitions + mapping, local/private input.")
 endif()
