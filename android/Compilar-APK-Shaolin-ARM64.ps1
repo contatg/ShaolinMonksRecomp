@@ -118,6 +118,6 @@ Write-Host "APK generated: $($info.FullName)" -ForegroundColor Green
 Write-Host "APK size: $($info.Length) bytes"
 Write-Host "SHA256: $hash"
 Write-Host "Build log: $log"
-Write-Host 'REAL GAME BOOT enabled: recompiled Xbox entry launches; D3D8 Vulkan gameplay rendering is NOT yet integrated.'
+Write-Host 'REAL GAME BOOT enabled; D3D8 Vulkan / GLES code linked. On-device gameplay and visuals are NOT yet verified.'
 Write-Host 'Install on your test phone, select your ORIGINAL ISO and press Play; capture the first guest errors.'
 Write-Host 'Kernel log tag: ShaolinXboxKernel (plus ShaolinXbox, ShaolinMobiu and Android crash logs).'
