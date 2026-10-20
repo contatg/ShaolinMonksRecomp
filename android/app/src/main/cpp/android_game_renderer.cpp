@@ -17,6 +17,7 @@
 #include "gpu/backend.h"
 #include "gpu/texture.h"
 #include "gpu/vertex.h"
+#include "linux/vk/bc_decode.h"
 #include "kernel/kernel.h"
 #include "shaolin_game_trace.h"
 #include "android_graphics_host.h"
@@ -120,6 +121,12 @@ class OpenGLESBackend final : public Backend {
     GLuint shader_ = 0;
     GLuint vbo_ = 0;
     GLuint ebo_ = 0;
+    GLuint tex_ = 0;
+    GLint tex_enabled_ = -1;
+    uint32_t cached_header_ = 0;
+    uint32_t cached_data_ = 0;
+    uint64_t cached_epoch_ = 0;
+    uint64_t textured_draws_ = 0;
     GLint pos_ = -1, color_ = -1;
     uint32_t w_ = 0, h_ = 0;
     uint64_t draws_ = 0, frames_ = 0, skipped_shaders_ = 0, skipped_formats_ = 0, raw_draws_ = 0;
@@ -130,6 +137,7 @@ public:
             if (shader_) glDeleteProgram(shader_);
             if (vbo_) glDeleteBuffers(1, &vbo_);
             if (ebo_) glDeleteBuffers(1, &ebo_);
+            if (tex_) glDeleteTextures(1, &tex_);
             SDL_GL_DestroyContext(ctx_);
         }
     }
@@ -156,13 +164,18 @@ public:
 precision highp float;
 layout(location=0) in vec4 pos;
 layout(location=1) in vec4 col;
+layout(location=2) in vec2 uv;
 out vec4 c;
-void main() { gl_Position=pos; c=col; })";
+out vec2 t;
+void main() { gl_Position=pos; c=col; t=uv; })";
         const char* fs = R"(#version 300 es
 precision highp float;
 in vec4 c;
+in vec2 t;
+uniform sampler2D image;
+uniform int texEnabled;
 out vec4 outColor;
-void main() { outColor=c; })";
+void main() { outColor=c*(texEnabled != 0 ? texture(image,t) : vec4(1.0)); })";
         GLuint v = Compile(GL_VERTEX_SHADER, vs), f = Compile(GL_FRAGMENT_SHADER, fs);
         if (!v || !f) {
             if (v) glDeleteShader(v);
@@ -179,8 +192,18 @@ void main() { outColor=c; })";
             GPUERR("GLES3 program link failed");
             return false;
         }
+        tex_enabled_ = glGetUniformLocation(shader_, "texEnabled");
+        glUseProgram(shader_);
+        glUniform1i(glGetUniformLocation(shader_, "image"), 0);
         glGenBuffers(1, &vbo_);
         glGenBuffers(1, &ebo_);
+        glGenTextures(1, &tex_);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, tex_);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDisable(GL_CULL_FACE);
@@ -209,6 +232,79 @@ void main() { outColor=c; })";
         }
         if (mask) glClear(mask);
     }
+    // Black Mobiu's Vulkan path decodes Xbox textures from guest memory.
+    // Reuse the same shared texture decoder for GLES; the previous fallback
+    // unconditionally multiplied by white and therefore showed white quads.
+    // This starts with the primary 2D stage only; programmable combiners,
+    // render-to-texture and 3D vertex shaders still need the Vulkan backend.
+    bool BindXboxTexture(uint32_t header) {
+        if (!header || !tex_) return false;
+        TextureDesc desc{};
+        if (!Describe(header, desc)) return false;
+        if (desc.width == 0 || desc.height == 0 ||
+            desc.width > 2048 || desc.height > 2048 || desc.depth != 1 ||
+            !desc.data || desc.cube || desc.levels > 15) return false;
+        const FormatInfo& fmt = Format(desc.format);
+        if (fmt.host != Host::BGRA8 && fmt.host != Host::BC1 &&
+            fmt.host != Host::BC2 && fmt.host != Host::BC3) return false;
+        const uint32_t total = TotalSize(desc);
+        if (total == 0 || total > 32u * 1024u * 1024u) return false;
+
+        const uint64_t epoch = DirtyEpoch(desc.data);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, tex_);
+        if (cached_header_ == header && cached_data_ == desc.data && cached_epoch_ == epoch)
+            return true;
+
+        const uint8_t* guest = static_cast<const uint8_t*>(kernel::HostPtr(desc.data));
+        if (!guest) return false;
+        std::vector<uint8_t> bytes;
+        uint32_t src_pitch = 0;
+        DecodeLevel(desc, 0, 0, guest, nullptr, bytes, src_pitch);
+        if (bytes.empty()) return false;
+        if (fmt.compressed) {
+            std::vector<uint8_t> expanded;
+            uint32_t expanded_pitch = 0;
+            const int bc = fmt.host == Host::BC1 ? 1 : fmt.host == Host::BC2 ? 2 : 3;
+            vkbc::Decode(bc, bytes.data(), src_pitch, desc.width, desc.height,
+                         1, expanded, expanded_pitch);
+            bytes.swap(expanded);
+            src_pitch = expanded_pitch;
+        }
+        // Decoder output is BGRA, and GLES3 guarantees RGBA8, not BGRA_EXT.
+        // Crop the padded final BC block so GL_UNPACK_ALIGNMENT never reads
+        // outside the Xbox texture.
+        const size_t width_bytes = size_t(desc.width) * 4;
+        if (src_pitch < width_bytes || bytes.size() < size_t(src_pitch) * desc.height)
+            return false;
+        std::vector<uint8_t> rgba(width_bytes * desc.height);
+        for (uint32_t y = 0; y < desc.height; ++y) {
+            const uint8_t* row = bytes.data() + size_t(y) * src_pitch;
+            uint8_t* dst = rgba.data() + size_t(y) * width_bytes;
+            for (uint32_t x = 0; x < desc.width; ++x) {
+                dst[x * 4 + 0] = row[x * 4 + 2];
+                dst[x * 4 + 1] = row[x * 4 + 1];
+                dst[x * 4 + 2] = row[x * 4 + 0];
+                dst[x * 4 + 3] = row[x * 4 + 3];
+            }
+        }
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, GLsizei(desc.width), GLsizei(desc.height),
+                     0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+        const GLenum status = glGetError();
+        if (status != GL_NO_ERROR) {
+            shaolin_android::Trace("GLES_TEXTURE_UPLOAD_FAILED err=%u fmt=%u",
+                                   unsigned(status), desc.format);
+            cached_header_ = 0;
+            return false;
+        }
+        cached_header_ = header;
+        cached_data_ = desc.data;
+        cached_epoch_ = epoch;
+        shaolin_android::Trace("GLES_XBOX_TEXTURE_UPLOADED %ux%u format=%u bc=%d",
+                               desc.width, desc.height, desc.format, fmt.compressed ? 1 : 0);
+        return true;
+    }
     // Xbox FVF XYZRHW position/colour path. Use both the SDK's raw and
     // converted vertex layouts and preserve their primitive indices. The
     // programmable vertex microcode path is not approximated here: Vulkan
@@ -224,7 +320,8 @@ void main() { outColor=c; })";
             return;
         }
         if (!a.vertex_count || a.vertex_count > 65536) return;
-        struct Vertex { float x,y,z,w,r,g,b,alpha; };
+        struct Vertex { float x,y,z,w,r,g,b,alpha,u,v; };
+        const bool has_texture = s.textures[0] && BindXboxTexture(s.textures[0]);
         std::vector<Vertex> verts;
         verts.reserve(a.vertex_count);
         for (uint32_t i = 0; i < a.vertex_count; ++i) {
@@ -244,7 +341,10 @@ void main() { outColor=c; })";
             const float y = 1.f - (pos[1] / float(std::max(1u,h_))) * 2.f;
             // Z is 0..1 on Xbox; GLES clip Z uses -1..1.
             const float z = std::clamp(pos[2],0.f,1.f) * 2.f - 1.f;
-            verts.push_back({x,y,z,1.f,colour[0],colour[1],colour[2],colour[3]});
+            float uv[4]{0.f,0.f,0.f,1.f};
+            const bool has_uv = ReadXboxVertexRegister(a, i, 9, uv);
+            verts.push_back({x,y,z,1.f,colour[0],colour[1],colour[2],colour[3],
+                             has_uv ? uv[0] : 0.f, has_uv ? uv[1] : 0.f});
         }
         const GLenum mode = a.topology == Topology::Lines ?
             (a.strip ? GL_LINE_STRIP : GL_LINES) :
@@ -276,6 +376,7 @@ void main() { outColor=c; })";
         }
         // Use the same GL context the Android main event thread created.
         glUseProgram(shader_);
+        glUniform1i(tex_enabled_, has_texture ? 1 : 0);
         int output_w = 0, output_h = 0;
         shaolin_android::GameOutputSize(&output_w, &output_h);
         glViewport(0, 0, std::max(1, output_w), std::max(1, output_h));
@@ -285,6 +386,8 @@ void main() { outColor=c; })";
         glVertexAttribPointer(0,4,GL_FLOAT,GL_FALSE,sizeof(Vertex),nullptr);
         glEnableVertexAttribArray(1);
         glVertexAttribPointer(1,4,GL_FLOAT,GL_FALSE,sizeof(Vertex),(const void*)(4*sizeof(float)));
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),(const void*)(8*sizeof(float)));
         if (!order.empty()) {
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo_);
             glBufferData(GL_ELEMENT_ARRAY_BUFFER, order.size()*sizeof(uint32_t),order.data(),GL_STREAM_DRAW);
@@ -293,11 +396,13 @@ void main() { outColor=c; })";
             glDrawArrays(mode,0,GLsizei(std::min<size_t>(verts.size(),a.draw_count ? a.draw_count : verts.size())));
         }
         ++draws_;
+        if (has_texture) ++textured_draws_;
         if (a.vertices.empty()) ++raw_draws_;
         if (draws_ <= 3 || draws_ % 300 == 0)
-            shaolin_android::Trace("GLES_XBOX_DRAW_SUBMITTED total=%llu raw=%llu vertices=%u indices=%zu",
+            shaolin_android::Trace("GLES_XBOX_DRAW_SUBMITTED total=%llu raw=%llu textured=%llu vertices=%u indices=%zu",
                 static_cast<unsigned long long>(draws_),
                 static_cast<unsigned long long>(raw_draws_),
+                static_cast<unsigned long long>(textured_draws_),
                 a.vertex_count,order.size());
     }
     void Copy(const Surface& src, const Surface& dst,
