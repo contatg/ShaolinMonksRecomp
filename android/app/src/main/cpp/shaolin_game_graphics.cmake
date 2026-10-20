@@ -72,6 +72,7 @@ target_sources(main PRIVATE
     "${shaolin_android_imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp")
 
 target_include_directories(main PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}"
     "${SHAOLIN_REPO_ROOT}/src"
     "${SHAOLIN_REPO_ROOT}/src/linux/compat"
     "${shaolin_android_imgui_SOURCE_DIR}"
