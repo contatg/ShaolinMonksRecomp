@@ -19,7 +19,7 @@ FetchContent_Declare(shaolin_android_imgui
 FetchContent_MakeAvailable(glslang shaolin_android_imgui)
 
 set(SHAOLIN_ADAPTED "${SHAOLIN_REPO_ROOT}/build/release/adapted")
-foreach(f d3d8.cpp vertex.cpp shaders.cpp render_thread.cpp)
+foreach(f d3d8.cpp dsound.cpp vertex.cpp shaders.cpp render_thread.cpp)
     if(NOT EXISTS "${SHAOLIN_ADAPTED}/${f}")
         message(FATAL_ERROR
             "Missing SHAOLIN-SPECIFIC XDK graphics adaptation ${SHAOLIN_ADAPTED}/${f}. Configure the native PC project first.")
@@ -51,7 +51,9 @@ set(SHAOLIN_VK "${SHAOLIN_REPO_ROOT}/src/linux/vk")
 target_sources(main PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/android_game_renderer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/android_game_host.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/android_game_audio.cpp"
     "${SHAOLIN_ADAPTED}/d3d8.cpp"
+    "${SHAOLIN_ADAPTED}/dsound.cpp"
     "${SHAOLIN_ADAPTED}/vertex.cpp"
     "${SHAOLIN_ADAPTED}/shaders.cpp"
     "${SHAOLIN_ARM64_RENDER_THREAD}"
