@@ -21,19 +21,57 @@ Write-Host '[2/2] Performing the Android NDK final shared-library link (--no-und
 if($LASTEXITCODE -ne 0){
   throw "Native Android shared link failed ($LASTEXITCODE). Send the FIRST 'undefined symbol:' linker errors."
 }
-$so=@(Get-ChildItem $build -Recurse -File -Filter 'libshaolin_game_link_probe.so')
-if($so.Count -ne 1){throw "Expected one link probe .so, found $($so.Count)"}
+# Android Gradle Plugin sends .so files to app/build/intermediates/cxx,
+# OUTSIDE the CMake .cxx ninja build tree. Derive this build's specific
+# Gradle output directory from its CMake build hash, avoiding stale libraries.
+$buildHash=(Split-Path (Split-Path $build -Parent) -Leaf)
+$abi=(Split-Path $build -Leaf)
+$gradleOut=Join-Path $PSScriptRoot ("app\build\intermediates\cxx\Debug\" + $buildHash + "\obj\" + $abi)
+$expected=Join-Path $gradleOut 'libshaolin_game_link_probe.so'
+if(-not (Test-Path -LiteralPath $expected -PathType Leaf)){
+  # Gradle sometimes uses a different output root; read the CMake cache.
+  $cache=Join-Path $build 'CMakeCache.txt'
+  $cacheOutput=''
+  if(Test-Path -LiteralPath $cache){
+    foreach($line in (Get-Content -LiteralPath $cache)){
+      if($line.StartsWith('CMAKE_LIBRARY_OUTPUT_DIRECTORY:PATH=')){
+        $cacheOutput=$line.Substring('CMAKE_LIBRARY_OUTPUT_DIRECTORY:PATH='.Length)
+        break
+      }
+    }
+  }
+  if($cacheOutput){
+    $candidate=Join-Path $cacheOutput 'libshaolin_game_link_probe.so'
+    if(Test-Path -LiteralPath $candidate -PathType Leaf){$expected=$candidate}
+  }
+}
+if(-not (Test-Path -LiteralPath $expected -PathType Leaf)){
+  throw "CMake link succeeded but the library could not be located. Checked: $expected. Please run: Get-ChildItem '.\android\app\build' -Filter 'libshaolin_game_link_probe.so' -Recurse"
+}
+$so=Get-Item -LiteralPath $expected
+# Confirm this is an actual Android ARM64 ELF shared library, not just a
+# successful link message. Do not load it or run Xbox guest code here.
+$androidHome=if($env:ANDROID_HOME){$env:ANDROID_HOME}else{"$env:LOCALAPPDATA\Android\Sdk"}
+$readelf=Join-Path $androidHome 'ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-readelf.exe'
+if(-not(Test-Path -LiteralPath $readelf)){throw "Cannot verify ELF; llvm-readelf not found: $readelf"}
+$header=(& $readelf -h $so.FullName | Out-String)
+if($LASTEXITCODE -ne 0 -or -not $header.Contains('AArch64') -or -not $header.Contains('DYN')){
+  throw "The generated file is not a valid ARM64 shared ELF library: $($so.FullName)"
+}
+$sha256=(Get-FileHash -LiteralPath $so.FullName -Algorithm SHA256).Hash
 $reportDir=Join-Path $root 'android-local\link'
 New-Item -ItemType Directory -Path $reportDir -Force|Out-Null
 $report=Join-Path $reportDir 'shaolin-game-native-link-summary.txt'
 @(
  'Xbox Shaolin Monks native ARM64 link test completed'
- "File: $($so[0].FullName)"
- "Bytes: $($so[0].Length)"
+ "File: $($so.FullName)"
+ "Bytes: $($so.Length)"
+ "SHA256: $sha256"
+ "ELF: AArch64 / shared DYN"
  'No unresolved native link dependencies in this test library.'
  'This is not a running game: Xbox boot thread, missing kernel/XDK behavior,'
  'input/audio and the real game Vulkan renderer are not connected to the Android launcher.'
 ) | Set-Content -LiteralPath $report -Encoding UTF8
-Write-Host "SUCCESS: ARM64 native .so linked at $($so[0].FullName)" -ForegroundColor Green
+Write-Host "SUCCESS: ARM64 native .so linked at $($so.FullName)" -ForegroundColor Green
 Write-Host "Report: $report"
 Write-Host 'IMPORTANT: Do not install this standalone .so as a game APK.'
