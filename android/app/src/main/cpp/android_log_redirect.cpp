@@ -4,6 +4,8 @@
 #include <atomic>
 #include <cerrno>
 #include <cstdio>
+#include <cstdlib>
+#include <exception>
 #include <string>
 #include <thread>
 #include <unistd.h>
@@ -52,6 +54,27 @@ void StartXboxLogcat() {
             __android_log_write(ANDROID_LOG_INFO, "ShaolinXboxKernel", line.c_str());
         close(in);
     }).detach();
+    // A guest thread's uncaught C++ exception otherwise terminates Android
+    // without necessarily draining stderr. Record the exception directly
+    // before triggering the normal native tombstone.
+    std::set_terminate([] {
+        std::exception_ptr e = std::current_exception();
+        if (e) {
+            try {
+                std::rethrow_exception(e);
+            } catch (const std::exception& err) {
+                __android_log_print(ANDROID_LOG_FATAL, "ShaolinXboxKernel",
+                                    "UNCAUGHT XBOX/HOST EXCEPTION: %s", err.what());
+            } catch (...) {
+                __android_log_write(ANDROID_LOG_FATAL, "ShaolinXboxKernel",
+                                    "UNCAUGHT UNKNOWN XBOX/HOST EXCEPTION");
+            }
+        } else {
+            __android_log_write(ANDROID_LOG_FATAL, "ShaolinXboxKernel",
+                                "std::terminate in Xbox/HLE guest thread");
+        }
+        std::abort();
+    });
     __android_log_write(ANDROID_LOG_INFO, "ShaolinXboxKernel",
                         "Xbox kernel/game stderr diagnostics now routed to logcat");
 }
