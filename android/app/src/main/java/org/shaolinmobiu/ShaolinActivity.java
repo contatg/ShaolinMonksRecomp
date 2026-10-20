@@ -32,6 +32,10 @@ public final class ShaolinActivity extends SDLActivity {
         args.add(Integer.toString(fps == 30 ? 30 : 60));
         args.add("--scale");
         args.add(Integer.toString(scale));
+        String renderer = prefs.getString(LauncherActivity.KEY_RENDERER, "vulkan");
+        args.add("--renderer");
+        args.add("opengl".equals(renderer) ? "opengl" : "vulkan");
+        Log.i(TAG, "Launching genuine Xbox game graphics backend: " + renderer);
 
         final String uriText = prefs.getString(LauncherActivity.KEY_GAME_URI, "");
         final String kind = prefs.getString(LauncherActivity.KEY_GAME_KIND, "");
