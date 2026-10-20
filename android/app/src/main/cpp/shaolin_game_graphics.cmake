@@ -40,7 +40,7 @@ endif()
 string(SUBSTRING "${SHAOLIN_RENDER_THREAD}" 0 ${SHAOLIN_SAME_BEGIN} SHAOLIN_PREFIX)
 string(SUBSTRING "${SHAOLIN_RENDER_THREAD}" ${SHAOLIN_SAME_END} -1 SHAOLIN_SUFFIX)
 set(SHAOLIN_RENDER_THREAD
-  "${SHAOLIN_PREFIX}bool Same(const uint8_t* a, const uint8_t* b, size_t n) { return std::memcmp(a,b,n)==0; }\\n\\n${SHAOLIN_SUFFIX}")
+  "${SHAOLIN_PREFIX}bool Same(const uint8_t* a, const uint8_t* b, size_t n) { return std::memcmp(a,b,n)==0; }\n\n${SHAOLIN_SUFFIX}")
 set(SHAOLIN_ARM64_RENDER_THREAD "${CMAKE_CURRENT_BINARY_DIR}/shaolin_render_thread_arm64.cpp")
 file(WRITE "${SHAOLIN_ARM64_RENDER_THREAD}" "${SHAOLIN_RENDER_THREAD}")
 
