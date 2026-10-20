@@ -20,7 +20,7 @@ $targets=@(
   @('shaolin_guest_arm64.dir',129),
   @('shaolin_dispatch_arm64.dir',1),
   @('shaolin_krypt_routines_arm64.dir',30),
-  @('shaolin_xbox_kernel_arm64.dir',4),
+  @('shaolin_xbox_kernel_arm64.dir',5),
   @('shaolin_xbox_boot_arm64.dir',2),
   @('shaolin_android_boot_host_arm64.dir',1)
 )
