@@ -6,6 +6,7 @@
 #include <android/log.h>
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <memory>
 #include <vector>
@@ -134,7 +135,8 @@ void main() { outColor=c; })";
             return;
         }
         // The converted assembler represents 16 vec4 input registers per vertex.
-        const size_t floats_per_vertex = 64;
+        const size_t floats_per_vertex = size_t(std::popcount(unsigned(a.regs))) * 4;
+        if (!floats_per_vertex) return;
         if (a.vertices.size() < a.vertex_count * floats_per_vertex) return;
         struct Vertex { float x,y,z,w,r,g,b,alpha; };
         std::vector<Vertex> verts;
@@ -173,7 +175,6 @@ void main() { outColor=c; })";
                     (unsigned long long)frames_,(unsigned long long)draws_);
     }
     void Sync(uint32_t, uint32_t) override { glFinish(); }
-    void SyncLate(uint32_t, uint32_t) = delete;
     void SyncLate(uint32_t) override { glFlush(); }
     void Flush() override { glFlush(); }
     void SetGamma(const uint8_t*) override {}
