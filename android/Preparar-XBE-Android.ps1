@@ -53,7 +53,16 @@ if (-not (Test-Path (Join-Path $sdk "cmake\XbeRecomp.cmake"))) {
 $revision = (& git -C $sdk rev-parse HEAD | Out-String).Trim()
 Check-NativeCommand "SDK revision read"
 if ($revision -ne $sdkRevision) {
-    throw "SDK checkout differs from pinned revision $sdkRevision. Current revision: $revision"
+    Write-Host "SDK revision $revision differs from pinned $sdkRevision. Fetching pinned commit..." -ForegroundColor Yellow
+    & git -C $sdk fetch --no-tags origin $sdkRevision
+    Check-NativeCommand "SDK pinned commit fetch"
+    & git -C $sdk checkout --detach $sdkRevision
+    Check-NativeCommand "SDK pinned commit checkout"
+    $revision = (& git -C $sdk rev-parse HEAD | Out-String).Trim()
+    Check-NativeCommand "SDK revision read after checkout"
+    if ($revision -ne $sdkRevision) {
+        throw "Pinned XboxXBERecomp revision could not be selected. Current: $revision"
+    }
 }
 Write-Host "Configuring Windows host recompiler..." -ForegroundColor Cyan
 & python (Join-Path $root "tools\build_recomp.py") --xbe $xbeFile --sdk $sdk --llvm $Llvm --jobs $Jobs --configure-only
