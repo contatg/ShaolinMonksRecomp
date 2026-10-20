@@ -399,10 +399,31 @@ int main(int argc, char** argv) {
     SMLOG("Launcher preferences: FPS=%d (active), future game scale=%d%% (not yet applied)",
           fps_limit, render_preference);
     ProbeXboxSource(source_fd);
-    // Stage one of real Xbox boot: read original game, verify the audited XBE,
-    // and populate the guest RAM image. No CPU dispatch is attempted yet.
-    if (source_fd >= 0 && !shaolin_android::PrepareXboxImage(source_fd))
-        SMERR("Xbox guest image preboot failed; rendering test remains available.");
+    // Read the player's original Xbox image and map the genuine guest RAM.
+    // Local private game builds also initialize the actual ARM64 recompiler
+    // dispatch table and verify its entrypoint against the original XBE.
+    // The original game thread is NOT invoked before kernel/XDK is ready.
+    uint32_t original_entry = 0;
+    uint32_t original_kernel_thunk = 0;
+    if (source_fd >= 0) {
+        const bool image_ready = shaolin_android::PrepareXboxImage(
+            source_fd, &original_entry, &original_kernel_thunk);
+        if (!image_ready) {
+            SMERR("Xbox guest image preboot failed; launcher renderer remains available.");
+        } else {
+#ifdef SHAOLIN_NATIVE_GUEST
+            if (!shaolin_android::InitializeRecompiledGame(
+                    original_entry, original_kernel_thunk)) {
+                SMERR("Native recomp dispatcher failed to initialize; Xbox game has not started.");
+            } else {
+                SMLOG("Native Xbox recomp is linked inside this Android APK. "
+                      "Entry dispatch ready, gameplay not started.");
+            }
+#else
+            SMLOG("Public launcher-only build: private game recompiler code is not included.");
+#endif
+        }
+    }
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS)) {
         SMERR("SDL_Init: %s", SDL_GetError());
