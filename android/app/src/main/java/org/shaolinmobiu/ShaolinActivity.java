@@ -7,6 +7,8 @@ import android.util.Log;
 import org.libsdl.app.SDLActivity;
 
 import java.io.IOException;
+import java.io.File;
+import java.io.FileWriter;
 import java.util.ArrayList;
 
 /**
@@ -32,6 +34,16 @@ public final class ShaolinActivity extends SDLActivity {
         args.add(Integer.toString(fps == 30 ? 30 : 60));
         args.add("--scale");
         args.add(Integer.toString(scale));
+        // App-private trace survives logcat restrictions and is readable via
+        // adb shell run-as in debug APKs; never contains ROM bytes or game paths.
+        File trace = new File(getFilesDir(), "shaolin-native-trace.txt");
+        try (FileWriter writer = new FileWriter(trace, false)) {
+            writer.write("JAVA_ACTIVITY_GET_ARGUMENTS\n");
+        } catch (IOException e) {
+            Log.e(TAG, "Cannot create private startup trace", e);
+        }
+        args.add("--trace-file");
+        args.add(trace.getAbsolutePath());
         String renderer = prefs.getString(LauncherActivity.KEY_RENDERER, "vulkan");
         args.add("--renderer");
         args.add("opengl".equals(renderer) ? "opengl" : "vulkan");
@@ -49,7 +61,7 @@ public final class ShaolinActivity extends SDLActivity {
                 if (gameDescriptor != null) {
                     args.add("--game-fd");
                     args.add(Integer.toString(gameDescriptor.getFd()));
-                    Log.i(TAG, "Read-only Xbox game source opened for native validation");
+                    Log.i(TAG, "Read-only Xbox game source opened for native GameBoot");
                 }
             } catch (SecurityException | IOException | IllegalArgumentException e) {
                 Log.e(TAG, "Cannot open saved game document permission: " + e.getClass().getSimpleName());
