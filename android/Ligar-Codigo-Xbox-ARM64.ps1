@@ -34,7 +34,7 @@ foreach($file in @('memory.cpp.o','log.cpp.o')){
   $match=@(Get-ChildItem $build -Filter $file -File -Recurse |
     Where-Object { $_.FullName -match '[\\/]CMakeFiles[\\/]main\\.dir[\\/]' })
   if($match.Count -eq 0){
-    Write-Host "Missing preboot object $file: building existing main target incrementally..."
+    Write-Host "Missing preboot object ${file}: building existing main target incrementally..."
     & cmake --build $build --target main --parallel 2
     if($LASTEXITCODE -ne 0){throw "Existing Android main build failed ($LASTEXITCODE)"}
     $match=@(Get-ChildItem $build -Filter $file -File -Recurse |
