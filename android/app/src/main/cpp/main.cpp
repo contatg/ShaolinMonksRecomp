@@ -7,6 +7,7 @@
 #include <kernel/kernel.h>
 #include <core/input.h>
 #include <string>
+namespace input { void MainThreadEvent(const SDL_Event&); void MainThreadUpdate(); }
 #include "shaolin_game_trace.h"
 namespace shaolin_android {
 void StartXboxLogcat();
@@ -464,7 +465,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 #ifdef SHAOLIN_REAL_GAME_BOOT
-    shaolin_android::Trace("SDL_INIT_OK");
+    shaolin_android::Trace("SDL_INIT_OK SDL_IsMainThread=%d",
+                           SDL_IsMainThread() ? 1 : 0);
 #endif
     // SDL Android needs GLES3 configured before creating its EGL window.
     if (use_opengl) {
@@ -559,6 +561,9 @@ int main(int argc, char** argv) {
         }
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            // Only this SDL main thread may pump and handle events. The guest
+            // XInitDevices worker and XInputGetState now read Pad snapshots.
+            input::MainThreadEvent(event);
             if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_TERMINATING)
                 alive = false;
             else if (event.type == SDL_EVENT_DID_ENTER_FOREGROUND)
@@ -566,6 +571,7 @@ int main(int argc, char** argv) {
             else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN)
                 SMLOG("Xbox gamepad button pressed");
         }
+        input::MainThreadUpdate();
         SDL_Delay(12);
     }
     SDL_DestroyWindow(window);
