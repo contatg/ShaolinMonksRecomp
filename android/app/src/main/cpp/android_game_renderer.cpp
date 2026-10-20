@@ -58,10 +58,11 @@ GLuint Compile(GLenum type, const char* source) {
 // Decode the pinned SDK's DXGI-format vertex description directly, copying
 // unaligned bytes safely and bounding each read by the buffer's byte count.
 bool ReadXboxVertexRegister(const Assembled& a, uint32_t vertex, unsigned reg, float dst[4]) {
-    dst[0] = dst[1] = dst[2] = 0.f;
-    dst[3] = 1.f;
     if (reg >= 16 || !(a.regs & (1u << reg)) || vertex >= a.vertex_count)
         return false;
+    // Leave caller defaults untouched for attributes the XBE did not bind.
+    dst[0] = dst[1] = dst[2] = 0.f;
+    dst[3] = 1.f;
     const VertexElement& e = a.elements[reg];
     if (e.buffer >= a.buffer_count || e.buffer >= a.buffers.size()) return false;
     const VertexBuffer& b = a.buffers[e.buffer];
@@ -226,7 +227,7 @@ void main() { outColor=c; })";
         std::vector<Vertex> verts;
         verts.reserve(a.vertex_count);
         for (uint32_t i = 0; i < a.vertex_count; ++i) {
-            float pos[4], colour[4]{1.f,1.f,1.f,1.f};
+            float pos[4]{0.f,0.f,0.f,1.f}, colour[4]{1.f,1.f,1.f,1.f};
             if (!ReadXboxVertexRegister(a, i, 0, pos)) {
                 if (++skipped_formats_ <= 3 || skipped_formats_ % 1024 == 0)
                     shaolin_android::Trace("GLES_UNREADABLE_XBOX_VERTEX reg0 format=%u raw=%d",
