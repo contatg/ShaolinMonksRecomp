@@ -124,6 +124,26 @@ if(SHAOLIN_ENABLE_GUEST_OBJECTS)
         -O1 -fno-strict-aliasing)
     set_target_properties(shaolin_krypt_routines_arm64 PROPERTIES
         POSITION_INDEPENDENT_CODE ON)
+
+    # Build a genuine Android shared-library link probe with all recompiled
+    # guest functions + Xbox CPU dispatch + original Krypt Lua engine.
+    # This deliberately has NO game-entry invocation and is NOT packaged into
+    # the launcher; the complete kernel/XDK and renderer are not wired yet.
+    add_library(shaolin_game_link_probe SHARED EXCLUDE_FROM_ALL
+        $<TARGET_OBJECTS:shaolin_guest_arm64>
+        $<TARGET_OBJECTS:shaolin_dispatch_arm64>
+        $<TARGET_OBJECTS:shaolin_kernel_symbols_arm64>
+        $<TARGET_OBJECTS:shaolin_krypt_routines_arm64>
+        "${XBE_SDK}/runtime/kernel/memory.cpp"
+        "${XBE_SDK}/runtime/core/log.cpp")
+    target_include_directories(shaolin_game_link_probe PRIVATE
+        "${XBE_SDK}/runtime" "${SHAOLIN_PRIVATE_GEN}" "${SHAOLIN_REPO_ROOT}/src")
+    target_compile_options(shaolin_game_link_probe PRIVATE
+        -O1 -fno-strict-aliasing)
+    target_link_libraries(shaolin_game_link_probe PRIVATE
+        ${log-lib} m dl)
+    target_link_options(shaolin_game_link_probe PRIVATE
+        "-Wl,--no-undefined" "-Wl,-z,max-page-size=16384")
     # Both object targets are only compiled locally, not packaged into a
     # playable APK before full kernel/XDK and graphics integration.
     message(STATUS
