@@ -35,8 +35,8 @@ $missing = @()
 # llvm-nm --demangle prints signatures like "T x86_kernel(X86Context&, ...)".
 # Check actual defined symbols, not the unstable Itanium C++ mangled spelling.
 foreach ($name in $check) {
-    $pattern = '(?:^|\\s)[TWt]\\s+' + [regex]::Escape($name) + '\\('
-    $match = @($symbols | Where-Object { $_ -match $pattern })
+    $needle = ' ' + $name + '('
+    $match = @($symbols | Where-Object { $_.Contains($needle) -and ($_ -match '\s[TWt]\s') })
     if ($match.Count) { Write-Host "  OK $name" -ForegroundColor Green }
     else { Write-Host "  NOT FOUND $name" -ForegroundColor Yellow; $missing += $name }
 }
