@@ -75,7 +75,7 @@ if(SHAOLIN_ENABLE_GUEST_OBJECTS)
         "// No x86 host intrinsics are used; this port targets ARM64."
         SHAOLIN_DISPATCH_SOURCE "${SHAOLIN_DISPATCH_SOURCE}")
     set(SHAOLIN_DISPATCH_ANDROID "${CMAKE_CURRENT_BINARY_DIR}/shaolin_dispatch_android.cpp")
-    file(WRITE "${SHAOLIN_DISPATCH_ANDROID}" "${SHAOLIN_DISPATCH_SOURCE}")
+    shaolin_write_if_changed("${SHAOLIN_DISPATCH_ANDROID}" "${SHAOLIN_DISPATCH_SOURCE}")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         "${SHAOLIN_DISPATCH_ORIGINAL}")
     add_library(shaolin_dispatch_arm64 OBJECT EXCLUDE_FROM_ALL
