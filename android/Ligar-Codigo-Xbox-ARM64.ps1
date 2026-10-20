@@ -30,18 +30,18 @@ $combined=Join-Path $out 'shaolin-guest-dispatch-kernel-arm64.o'
 # implementation. Reuse those objects for a private relocatable Xbox link.
 # Do not substitute dummy functions: we need working memory and logging.
 $hostObjects=@()
+# CMake emits object paths with a drive prefix (e.g. C_/dev/...),
+# so filter by the final filename and verify via llvm-nm rather than
+# assuming a particular directory nesting such as CMakeFiles/main.dir.
 foreach($file in @('memory.cpp.o','log.cpp.o')){
-  $match=@(Get-ChildItem $build -Filter $file -File -Recurse |
-    Where-Object { $_.FullName -match '[\\/]CMakeFiles[\\/]main\\.dir[\\/]' })
-  if($match.Count -eq 0){
-    Write-Host "Missing preboot object ${file}: building existing main target incrementally..."
-    & cmake --build $build --target main --parallel 2
-    if($LASTEXITCODE -ne 0){throw "Existing Android main build failed ($LASTEXITCODE)"}
-    $match=@(Get-ChildItem $build -Filter $file -File -Recurse |
-      Where-Object { $_.FullName -match '[\\/]CMakeFiles[\\/]main\\.dir[\\/]' })
-  }
+  $candidates=@(Get-ChildItem $build -Filter $file -File -Recurse)
+  $match=@($candidates | Where-Object {
+    $_.FullName.Contains('main.dir') -and $_.FullName.Contains('XboxXBERecomp')
+  })
   if($match.Count -ne 1){
-    throw "Expected one compiled real main object $file; found $($match.Count)."
+    Write-Host "Found $($candidates.Count) objects named $file; matching main+SDK: $($match.Count)"
+    $candidates | ForEach-Object { Write-Host $_.FullName }
+    throw "Cannot unambiguously select real SDK host object $file. Please send the paths printed above."
   }
   $hostObjects += $match[0].FullName
 }
