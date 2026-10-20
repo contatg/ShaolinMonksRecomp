@@ -249,6 +249,14 @@ void main() { outColor=c*(texEnabled != 0 ? texture(image,t) : vec4(1.0)); })";
             fmt.host != Host::BC2 && fmt.host != Host::BC3) return false;
         const uint32_t total = TotalSize(desc);
         if (total == 0 || total > 32u * 1024u * 1024u) return false;
+        // A malicious/bad Xbox texture header must never dereference outside
+        // guest pages. Bad graphics metadata should skip the draw, not SIGSEGV
+        // the entire Android process.
+        if (uint64_t(desc.data) + total > 0x100000000ull) return false;
+        for (uint32_t offset = 0; offset < total; offset += mem::kPage) {
+            if (!mem::IsCommitted(desc.data + offset)) return false;
+        }
+        if (!mem::IsCommitted(desc.data + total - 1)) return false;
 
         const uint64_t epoch = DirtyEpoch(desc.data);
         glActiveTexture(GL_TEXTURE0);
@@ -301,8 +309,11 @@ void main() { outColor=c*(texEnabled != 0 ? texture(image,t) : vec4(1.0)); })";
         cached_header_ = header;
         cached_data_ = desc.data;
         cached_epoch_ = epoch;
-        shaolin_android::Trace("GLES_XBOX_TEXTURE_UPLOADED %ux%u format=%u bc=%d",
-                               desc.width, desc.height, desc.format, fmt.compressed ? 1 : 0);
+        static uint64_t upload_logs = 0;
+        if (++upload_logs <= 8 || upload_logs % 128 == 0)
+            shaolin_android::Trace("GLES_XBOX_TEXTURE_UPLOADED %ux%u format=%u bc=%d count=%llu",
+                                   desc.width, desc.height, desc.format, fmt.compressed ? 1 : 0,
+                                   static_cast<unsigned long long>(upload_logs));
         return true;
     }
     // Xbox FVF XYZRHW position/colour path. Use both the SDK's raw and
