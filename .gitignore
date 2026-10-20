@@ -83,3 +83,6 @@ Desktop.ini
 /android/.cxx/
 /android/app/.cxx/
 /android/app/build/
+
+# Local private Android toolchain, logs, object files and downloads
+/android-local/
