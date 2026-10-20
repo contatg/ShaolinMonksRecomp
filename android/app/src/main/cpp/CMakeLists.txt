@@ -16,12 +16,16 @@ set(XBE_SDK "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/XboxXBERecomp")
 if(NOT EXISTS "${XBE_SDK}/runtime/kernel/disc.cpp")
     message(FATAL_ERROR "Pinned XboxXBERecomp runtime not found. Fetch it before configuring Android.")
 endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/shaolin_saf_disc.cmake")
 add_library(main SHARED
     main.cpp
     xbox_bootstrap.cpp
-    "${XBE_SDK}/runtime/kernel/disc.cpp"
+    "${SHAOLIN_DISC_ANDROID_CPP}"
     "${XBE_SDK}/runtime/kernel/memory.cpp"
     "${XBE_SDK}/runtime/core/log.cpp")
+# Must precede XBE_SDK runtime so bootstrap sees OpenFd and the patched
+# Disc object uses the same private layout. Other vendor sources stay intact.
+target_include_directories(main BEFORE PRIVATE "${SHAOLIN_SAF_DISC_OVERLAY}")
 target_include_directories(main PRIVATE "${XBE_SDK}/runtime")
 # Upstream POSIX guest allocator uses ftruncate but does not include unistd.h.
 # Inject the Android POSIX declaration only for this source, preserving SDK files.
