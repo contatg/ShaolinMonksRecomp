@@ -147,6 +147,21 @@ if(SHAOLIN_ENABLE_GUEST_OBJECTS)
     set_target_properties(shaolin_xbox_kernel_arm64 PROPERTIES
         POSITION_INDEPENDENT_CODE ON)
 
+    # Following Black-mobiu's portable SDK boot architecture: compile
+    # the actual Xbox boot coordinator and host file service separately.
+    # These depend on game-specific graphics/input/host services, so keep
+    # them isolated until those dependencies are implemented.
+    add_library(shaolin_xbox_boot_arm64 OBJECT EXCLUDE_FROM_ALL
+        "${XBE_SDK}/runtime/kernel/boot.cpp"
+        "${XBE_SDK}/runtime/kernel/files.cpp")
+    target_include_directories(shaolin_xbox_boot_arm64 PRIVATE
+        "${XBE_SDK}/runtime" "${SHAOLIN_PRIVATE_GEN}"
+        "${SHAOLIN_REPO_ROOT}/src")
+    target_compile_options(shaolin_xbox_boot_arm64 PRIVATE
+        -O1 -fno-strict-aliasing)
+    set_target_properties(shaolin_xbox_boot_arm64 PROPERTIES
+        POSITION_INDEPENDENT_CODE ON)
+
     # Build a genuine Android shared-library link probe with all recompiled
     # guest functions + Xbox CPU dispatch + original Krypt Lua engine.
     # This deliberately has NO game-entry invocation and is NOT packaged into
