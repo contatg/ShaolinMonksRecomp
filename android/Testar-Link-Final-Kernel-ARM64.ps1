@@ -13,10 +13,10 @@ $nm=Join-Path $ndk 'llvm-nm.exe'
 if(!(Test-Path $clang)){throw "NDK clang++ not found: $clang"}
 $so=Join-Path $fullDir 'libshaolin_kernel_final_probe.so'
 $log=Join-Path $fullDir 'final-link-errors.txt'
-$argsArray=@('--target=aarch64-linux-android24','-shared','-fPIC',
+$argsArray=@('--target=aarch64-linux-android30','-shared','-fPIC',
  '-Wl,--no-undefined','-Wl,-z,max-page-size=16384',
  '-o', $so, $obj, '-llog','-landroid','-lm','-ldl')
-Write-Host 'Testing final Android linker on genuine 176-object Xbox kernel/boot bundle...'
+Write-Host 'Testing final Android linker on genuine full Xbox kernel/boot bundle...'
 # Use the NDK clang++ driver, so libc++ and Android platform symbols are
 # resolved correctly. Capture native stdout/stderr without aborting PS5.
 $old=$ErrorActionPreference
