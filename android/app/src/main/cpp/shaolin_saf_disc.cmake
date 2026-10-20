@@ -75,7 +75,7 @@ string(REPLACE "${SHAOLIN_SCAN_PRIVATE_OLD}" "${SHAOLIN_SCAN_PRIVATE_NEW}"
 
 set(SHAOLIN_SAF_DISC_OVERLAY "${CMAKE_CURRENT_BINARY_DIR}/shaolin_saf_disc")
 file(MAKE_DIRECTORY "${SHAOLIN_SAF_DISC_OVERLAY}/kernel")
-file(WRITE "${SHAOLIN_SAF_DISC_OVERLAY}/kernel/disc.h" "${SHAOLIN_DISC_H}")
+shaolin_write_if_changed("${SHAOLIN_SAF_DISC_OVERLAY}/kernel/disc.h" "${SHAOLIN_DISC_H}")
 set(SHAOLIN_DISC_ANDROID_CPP "${CMAKE_CURRENT_BINARY_DIR}/shaolin_disc_saf_android.cpp")
-file(WRITE "${SHAOLIN_DISC_ANDROID_CPP}" "${SHAOLIN_DISC_CPP}")
+shaolin_write_if_changed("${SHAOLIN_DISC_ANDROID_CPP}" "${SHAOLIN_DISC_CPP}")
 message(STATUS "Android XDVDFS: direct SAF fd + dup(), no /proc/self/fd reopen and no multi-GB ISO copy")
