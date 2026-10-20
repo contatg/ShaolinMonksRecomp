@@ -60,15 +60,15 @@ $missing=Join-Path $out 'undefined-all.txt'
 & $nm --undefined-only --demangle $targetFile | Set-Content -LiteralPath $missing -Encoding UTF8
 if($LASTEXITCODE -ne 0){throw 'llvm-nm failed'}
 $rows=@(Get-Content -LiteralPath $missing)
-$host=@($rows|Where-Object {
+$missingHostServices=@($rows|Where-Object {
  $_ -match ' U (app::|gpu::|input::|xnet::|kernel::|shaolin::|audio::|snd::|d3d::|logx::|diag::|X86|sub_|x86_)'
 }|Sort-Object -Unique)
 $hostReport=Join-Path $out 'missing-host-xdk.txt'
-$host|Set-Content -LiteralPath $hostReport -Encoding UTF8
+$missingHostServices|Set-Content -LiteralPath $hostReport -Encoding UTF8
 Write-Host "REAL Xbox kernel + game combined successfully." -ForegroundColor Green
 Write-Host "External symbols remaining (includes Android standard libraries): $($rows.Count)"
-Write-Host "Missing Xbox/game host services: $($host.Count)"
+Write-Host "Missing Xbox/game host services: $($missingHostServices.Count)"
 Write-Host "Full report: $missing"
 Write-Host "Host XDK report: $hostReport"
-$host|Select-Object -First 55
+$missingHostServices|Select-Object -First 55
 Write-Host 'This test deliberately does not boot the Xbox thread or modify the working APK.'
