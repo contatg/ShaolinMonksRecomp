@@ -200,6 +200,20 @@ public final class LauncherActivity extends Activity {
         root.addView(game);
         refreshGameDetails();
 
+        section = text("MODS KRYPT", 12, GOLD, true);
+        section.setLetterSpacing(0.15f);
+        root.addView(section, verticalParams(28, 13));
+        LinearLayout mods = vertical();
+        mods.setPadding(dp(17), dp(18), dp(17), dp(18));
+        mods.setBackground(outlined(PANEL, BORDER, 20));
+        mods.addView(text("Mods e traduções", 18, WHITE, true));
+        mods.addView(text("Instale pacotes Krypt .tar.xz, gerencie atualizações, " +
+            "dependências e habilitações. Aplicação dentro do jogo ainda em desenvolvimento.",
+            12, MUTED, false), verticalParams(9, 12));
+        mods.addView(button("Gerenciar mods Krypt", true, () ->
+            startActivity(new Intent(this, ModManagerActivity.class))));
+        root.addView(mods);
+
         section = text("CONFIGURAÇÕES", 12, GOLD, true);
         section.setLetterSpacing(0.15f);
         root.addView(section, verticalParams(28, 13));
