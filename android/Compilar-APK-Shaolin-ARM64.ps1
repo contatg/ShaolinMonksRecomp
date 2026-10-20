@@ -1,6 +1,6 @@
 # Local/private Android ARM64 APK containing the user's own statically
-# recompiled original Xbox game functions + Xbox dispatch + Krypt Lua.
-# Does NOT upload game code to GitHub, install APK, or claim playable gameplay.
+# recompiled original Xbox guest, full kernel and real game Boot.
+# Keeps all proprietary game code private; renderer compatibility is not assumed.
 [CmdletBinding()]
 param([ValidateRange(1,8)][int]$Jobs=2)
 $ErrorActionPreference = 'Stop'
@@ -56,7 +56,7 @@ $localProps=Join-Path $PSScriptRoot 'local.properties'
     [System.Text.UTF8Encoding]::new($false))
 Write-Host "Android SDK configured locally: $androidSdkHome"
 
-Write-Host 'Building a PRIVATE ARM64 APK with the actual Shaolin guest recompilation.'
+Write-Host 'Building PRIVATE ARM64 APK with genuine Xbox kernel::Boot and actual game entry thread.'
 Write-Host 'Original 128 C++ partitions will be reused; only changed targets are rebuilt.'
 Write-Host 'Public launcher and Krypt manager source code are kept intact.'
 Push-Location $PSScriptRoot
@@ -78,7 +78,7 @@ $apk = Join-Path $PSScriptRoot 'app\build\outputs\apk\debug\app-debug.apk'
 if (-not (Test-Path -LiteralPath $apk -PathType Leaf)) {
     throw "Gradle returned success but debug APK not found at $apk"
 }
-$destination=Join-Path $output 'ShaolinMobiu-ARM64-Recomp-Experimental.apk'
+$destination=Join-Path $output 'ShaolinMobiu-ARM64-GameBoot.apk'
 Copy-Item -LiteralPath $apk -Destination $destination -Force
 # Verify Gradle actually packaged the game's native SDL library, rather than
 # reporting a successful but launcher-only Android APK.
@@ -101,6 +101,6 @@ Write-Host "APK generated: $($info.FullName)" -ForegroundColor Green
 Write-Host "APK size: $($info.Length) bytes"
 Write-Host "SHA256: $hash"
 Write-Host "Build log: $log"
-Write-Host 'IMPORTANT: This APK links real Xbox recomp and Krypt; gameplay still needs kernel/XDK + game renderer.'
-Write-Host 'Install only on your test phone and capture logcat tagged ShaolinXbox.'
-Write-Host "To view runtime on your test phone, run: adb logcat -s ShaolinXbox:* ShaolinMobiu:*"
+Write-Host 'REAL GAME BOOT enabled: recompiled Xbox entry launches; D3D8 Vulkan gameplay rendering is NOT yet integrated.'
+Write-Host 'Install on your test phone, select your ORIGINAL ISO and press Play; capture the first guest errors.'
+Write-Host 'Kernel log tag: ShaolinXboxKernel (plus ShaolinXbox, ShaolinMobiu and Android crash logs).'
