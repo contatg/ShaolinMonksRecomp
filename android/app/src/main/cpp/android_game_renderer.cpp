@@ -8,6 +8,10 @@
 #include <array>
 #include <bit>
 #include <cmath>
+#include <cstring>
+#include <limits>
+#include <cstdint>
+#include <dxgiformat.h>
 #include <memory>
 #include <vector>
 #include "gpu/backend.h"
@@ -48,6 +52,67 @@ GLuint Compile(GLenum type, const char* source) {
     }
     return shader;
 }
+// XboxXBERecomp uses RAW vertex buffers by default (XBE_RAW_VERTICES=1).
+// The old Android fallback only read Assembled::vertices, which is EMPTY for
+// almost all raw draws, so GL swapped frames without ever drawing geometry.
+// Decode the pinned SDK's DXGI-format vertex description directly, copying
+// unaligned bytes safely and bounding each read by the buffer's byte count.
+bool ReadXboxVertexRegister(const Assembled& a, uint32_t vertex, unsigned reg, float dst[4]) {
+    dst[0] = dst[1] = dst[2] = 0.f;
+    dst[3] = 1.f;
+    if (reg >= 16 || !(a.regs & (1u << reg)) || vertex >= a.vertex_count)
+        return false;
+    const VertexElement& e = a.elements[reg];
+    if (e.buffer >= a.buffer_count || e.buffer >= a.buffers.size()) return false;
+    const VertexBuffer& b = a.buffers[e.buffer];
+    if (!b.src || b.stride == 0) return false;
+    const uint64_t off = uint64_t(vertex) * b.stride + e.offset;
+    auto readable = [&](size_t bytes) { return off <= b.bytes && bytes <= b.bytes - off; };
+    const uint8_t* p = b.src + off;
+    auto copyFloats = [&](unsigned n) {
+        if (!readable(size_t(n) * sizeof(float))) return false;
+        std::memcpy(dst, p, size_t(n) * sizeof(float));
+        return true;
+    };
+    switch (static_cast<DXGI_FORMAT>(e.format)) {
+        case DXGI_FORMAT_R32_FLOAT: return copyFloats(1);
+        case DXGI_FORMAT_R32G32_FLOAT: return copyFloats(2);
+        case DXGI_FORMAT_R32G32B32_FLOAT: return copyFloats(3);
+        case DXGI_FORMAT_R32G32B32A32_FLOAT: return copyFloats(4);
+        case DXGI_FORMAT_B8G8R8A8_UNORM:
+            if (!readable(4)) return false;
+            dst[0] = p[2] / 255.f; dst[1] = p[1] / 255.f;
+            dst[2] = p[0] / 255.f; dst[3] = p[3] / 255.f;
+            return true;
+        case DXGI_FORMAT_R8G8B8A8_UNORM:
+            if (!readable(4)) return false;
+            for (int k = 0; k < 4; ++k) dst[k] = p[k] / 255.f;
+            return true;
+        case DXGI_FORMAT_R16G16B16A16_SNORM:
+        case DXGI_FORMAT_R16G16B16A16_SINT:
+        case DXGI_FORMAT_R16G16_SNORM:
+        case DXGI_FORMAT_R16G16_SINT:
+        case DXGI_FORMAT_R16_SNORM:
+        case DXGI_FORMAT_R16_SINT: {
+            const unsigned n = (e.format == DXGI_FORMAT_R16_SNORM ||
+                                e.format == DXGI_FORMAT_R16_SINT) ? 1 :
+                               (e.format == DXGI_FORMAT_R16G16_SNORM ||
+                                e.format == DXGI_FORMAT_R16G16_SINT) ? 2 : 4;
+            if (!readable(n * 2)) return false;
+            const bool normalized = e.format == DXGI_FORMAT_R16_SNORM ||
+                                    e.format == DXGI_FORMAT_R16G16_SNORM ||
+                                    e.format == DXGI_FORMAT_R16G16B16A16_SNORM;
+            for (unsigned k = 0; k < n; ++k) {
+                int16_t sample = 0;
+                std::memcpy(&sample, p + k * 2, sizeof sample);
+                dst[k] = normalized ? std::max(float(sample) / 32767.f, -1.f) : float(sample);
+            }
+            return true;
+        }
+        default: return false;
+    }
+}
+
 class OpenGLESBackend final : public Backend {
     SDL_GLContext ctx_ = nullptr;
     GLuint shader_ = 0;
@@ -55,7 +120,7 @@ class OpenGLESBackend final : public Backend {
     GLuint ebo_ = 0;
     GLint pos_ = -1, color_ = -1;
     uint32_t w_ = 0, h_ = 0;
-    uint64_t draws_ = 0, frames_ = 0;
+    uint64_t draws_ = 0, frames_ = 0, skipped_shaders_ = 0, skipped_formats_ = 0, raw_draws_ = 0;
     std::array<float, 1024> gamma_{};
 public:
     ~OpenGLESBackend() override {
@@ -142,51 +207,94 @@ void main() { outColor=c; })";
         }
         if (mask) glClear(mask);
     }
-    // Minimal software vertex assembly to verify Xbox primitive calls. Full
-    // programmable shader, texture stages, render targets and push buffers
-    // still need translation. Never invent a frame or animation.
+    // Xbox FVF XYZRHW position/colour path. Use both the SDK's raw and
+    // converted vertex layouts and preserve their primitive indices. The
+    // programmable vertex microcode path is not approximated here: Vulkan
+    // already has a full translator and must be used for 3D gameplay.
     void Draw(const State& s, uint32_t prim, uint32_t start,
               uint32_t count, const uint8_t* indices) override {
         Assembled a;
         if (!Assemble(s, prim, start, count, indices, a)) return;
-        if (!a.pretransformed || a.vertices.empty()) {
-            if (++draws_ % 1024 == 1) GPUINFO("GLES guest draw %llu: programmable/non-XYZRHW path pending",
-                                              (unsigned long long)draws_);
+        if (!a.pretransformed) {
+            if (++skipped_shaders_ <= 3 || skipped_shaders_ % 1024 == 0)
+                shaolin_android::Trace("GLES_NEEDS_PROGRAMMABLE_XBOX_VERTEX_SHADER skipped=%llu handle=%08X",
+                    static_cast<unsigned long long>(skipped_shaders_), s.vs_handle);
             return;
         }
-        // The converted assembler represents 16 vec4 input registers per vertex.
-        const size_t floats_per_vertex = size_t(std::popcount(unsigned(a.regs))) * 4;
-        if (!floats_per_vertex) return;
-        if (a.vertices.size() < a.vertex_count * floats_per_vertex) return;
+        if (!a.vertex_count || a.vertex_count > 65536) return;
         struct Vertex { float x,y,z,w,r,g,b,alpha; };
         std::vector<Vertex> verts;
         verts.reserve(a.vertex_count);
         for (uint32_t i = 0; i < a.vertex_count; ++i) {
-            const float* in = a.vertices.data() + size_t(i) * floats_per_vertex;
-            const float x = (in[0] / std::max(1u,w_))*2.f-1.f;
-            const float y = 1.f-(in[1] / std::max(1u,h_))*2.f;
-            verts.push_back({x,y,0.f,1.f,1.f,1.f,1.f,1.f});
+            float pos[4], colour[4]{1.f,1.f,1.f,1.f};
+            if (!ReadXboxVertexRegister(a, i, 0, pos)) {
+                if (++skipped_formats_ <= 3 || skipped_formats_ % 1024 == 0)
+                    shaolin_android::Trace("GLES_UNREADABLE_XBOX_VERTEX reg0 format=%u raw=%d",
+                        unsigned(a.elements[0].format), a.vertices.empty() ? 1 : 0);
+                return;
+            }
+            (void)ReadXboxVertexRegister(a, i, 3, colour);
+            // XYZRHW arrives in Xbox backbuffer pixel coordinates. Normalize
+            // against the guest viewport, NOT the Android output size.
+            const float x = (pos[0] / float(std::max(1u,w_))) * 2.f - 1.f;
+            const float y = 1.f - (pos[1] / float(std::max(1u,h_))) * 2.f;
+            // Z is 0..1 on Xbox; GLES clip Z uses -1..1.
+            const float z = std::clamp(pos[2],0.f,1.f) * 2.f - 1.f;
+            verts.push_back({x,y,z,1.f,colour[0],colour[1],colour[2],colour[3]});
         }
         const GLenum mode = a.topology == Topology::Lines ?
             (a.strip ? GL_LINE_STRIP : GL_LINES) :
             a.topology == Topology::Points ? GL_POINTS :
             (a.strip ? GL_TRIANGLE_STRIP : GL_TRIANGLES);
+        std::vector<uint32_t> order;
+        if (!a.indices.empty()) {
+            order = a.indices;
+        } else if (a.index_src && a.index_count) {
+            if (a.index_count > 393216) return;
+            order.reserve(a.index_count);
+            for (uint32_t i = 0; i < a.index_count; ++i) {
+                uint32_t id = 0;
+                if (a.index16) {
+                    uint16_t small = 0;
+                    std::memcpy(&small, static_cast<const uint8_t*>(a.index_src) + size_t(i) * 2, 2);
+                    id = small;
+                } else {
+                    std::memcpy(&id, static_cast<const uint8_t*>(a.index_src) + size_t(i) * 4, 4);
+                }
+                const int64_t fixed = int64_t(id) + a.base_vertex;
+                if (fixed < 0 || fixed >= int64_t(a.vertex_count)) return;
+                order.push_back(uint32_t(fixed));
+            }
+        }
+        if (!order.empty()) {
+            if (order.size() > 393216) return;
+            for (uint32_t v : order) if (v >= a.vertex_count) return;
+        }
+        // Use the same GL context the Android main event thread created.
         glUseProgram(shader_);
+        int output_w = 0, output_h = 0;
+        shaolin_android::GameOutputSize(&output_w, &output_h);
+        glViewport(0, 0, std::max(1, output_w), std::max(1, output_h));
         glBindBuffer(GL_ARRAY_BUFFER,vbo_);
         glBufferData(GL_ARRAY_BUFFER,verts.size()*sizeof(Vertex),verts.data(),GL_STREAM_DRAW);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0,4,GL_FLOAT,GL_FALSE,sizeof(Vertex),nullptr);
         glEnableVertexAttribArray(1);
         glVertexAttribPointer(1,4,GL_FLOAT,GL_FALSE,sizeof(Vertex),(const void*)(4*sizeof(float)));
-        if (!a.indices.empty()) {
+        if (!order.empty()) {
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo_);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, a.indices.size() * sizeof(uint32_t),
-                         a.indices.data(), GL_STREAM_DRAW);
-            glDrawElements(mode, GLsizei(a.indices.size()), GL_UNSIGNED_INT, nullptr);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, order.size()*sizeof(uint32_t),order.data(),GL_STREAM_DRAW);
+            glDrawElements(mode,GLsizei(order.size()),GL_UNSIGNED_INT,nullptr);
         } else {
-            glDrawArrays(mode, 0, GLsizei(verts.size()));
+            glDrawArrays(mode,0,GLsizei(std::min<size_t>(verts.size(),a.draw_count ? a.draw_count : verts.size())));
         }
         ++draws_;
+        if (a.vertices.empty()) ++raw_draws_;
+        if (draws_ <= 3 || draws_ % 300 == 0)
+            shaolin_android::Trace("GLES_XBOX_DRAW_SUBMITTED total=%llu raw=%llu vertices=%u indices=%zu",
+                static_cast<unsigned long long>(draws_),
+                static_cast<unsigned long long>(raw_draws_),
+                a.vertex_count,order.size());
     }
     void Copy(const Surface& src, const Surface& dst,
               uint32_t n, uint32_t rects, uint32_t points) override {
