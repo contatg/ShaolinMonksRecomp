@@ -2,6 +2,11 @@
 // This is a visible renderer test, NOT an executable Xbox game port.
 // No proprietary game data or generated Xbox code is linked in this build.
 #include "xbox_bootstrap.h"
+#ifdef SHAOLIN_REAL_GAME_BOOT
+#include <kernel/kernel.h>
+#include <string>
+namespace shaolin_android { void StartXboxLogcat(); }
+#endif
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_vulkan.h>
@@ -399,31 +404,26 @@ int main(int argc, char** argv) {
     SMLOG("Launcher preferences: FPS=%d (active), future game scale=%d%% (not yet applied)",
           fps_limit, render_preference);
     ProbeXboxSource(source_fd);
-    // Read the player's original Xbox image and map the genuine guest RAM.
-    // Local private game builds also initialize the actual ARM64 recompiler
-    // dispatch table and verify its entrypoint against the original XBE.
-    // The original game thread is NOT invoked before kernel/XDK is ready.
-    uint32_t original_entry = 0;
-    uint32_t original_kernel_thunk = 0;
+#ifdef SHAOLIN_REAL_GAME_BOOT
+    // Do NOT call PrepareXboxImage: the real Xbox kernel::Boot owns memory,
+    // patching import thunks, guest threads and host kernel initialization.
+    // The same original ISO is verified and mounted as the Xbox D: drive.
+    std::vector<uint8_t> verified_xbe;
+    bool xbox_image_ready = false;
     if (source_fd >= 0) {
-        const bool image_ready = shaolin_android::PrepareXboxImage(
-            source_fd, &original_entry, &original_kernel_thunk);
-        if (!image_ready) {
-            SMERR("Xbox guest image preboot failed; launcher renderer remains available.");
-        } else {
-#ifdef SHAOLIN_NATIVE_GUEST
-            if (!shaolin_android::InitializeRecompiledGame(
-                    original_entry, original_kernel_thunk)) {
-                SMERR("Native recomp dispatcher failed to initialize; Xbox game has not started.");
-            } else {
-                SMLOG("Native Xbox recomp is linked inside this Android APK. "
-                      "Entry dispatch ready, gameplay not started.");
-            }
-#else
-            SMLOG("Public launcher-only build: private game recompiler code is not included.");
-#endif
-        }
+        xbox_image_ready = shaolin_android::LoadVerifiedXboxForBoot(source_fd, verified_xbe);
+        if (!xbox_image_ready)
+            SMERR("GAME BOOT: ISO verification / D: mount failed");
+    } else {
+        SMERR("GAME BOOT: no original ISO selected in launcher");
     }
+#else
+    if (source_fd >= 0) {
+        uint32_t original_entry = 0, original_kernel_thunk = 0;
+        if (!shaolin_android::PrepareXboxImage(source_fd, &original_entry, &original_kernel_thunk))
+            SMERR("Xbox preboot failed");
+    }
+#endif
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS)) {
         SMERR("SDL_Init: %s", SDL_GetError());
@@ -444,7 +444,24 @@ int main(int argc, char** argv) {
             SMERR("Vulkan renderer startup failed. Original Shaolin code NOT running.");
             result = 3;
         } else {
-            SMLOG("VULKAN CLEAR TEST: purple/orange animation. Shaolin game runtime NOT linked.");
+#ifdef SHAOLIN_REAL_GAME_BOOT
+            if (xbox_image_ready) {
+                shaolin_android::StartXboxLogcat();
+                const char* pref = SDL_GetPrefPath("ShaolinMobiu", "Xbox");
+                const std::string data_dir = pref && *pref ? std::string(pref) : std::string("/data/local/tmp");
+                SMLOG("GAME BOOT: invoking REAL kernel::Boot with original Xbox XBE and mounted D: ISO");
+                // Guest threads execute independently from SDL's window thread.
+                // kernel::Boot returns after scheduling the first guest CPU entry.
+                if (!kernel::Boot(std::move(verified_xbe), "default.xbe",
+                                  data_dir + "/disc", data_dir + "/hdd")) {
+                    SMERR("GAME BOOT FAILED: kernel::Boot returned false; inspect ShaolinXboxKernel");
+                } else {
+                    SMLOG("GAME BOOT STARTED: Xbox guest entry thread launched; inspect ShaolinXboxKernel");
+                }
+            }
+#else
+            SMLOG("Launcher renderer initialized; game thread not included in this build.");
+#endif
             const Uint64 started = SDL_GetTicks();
             bool alive = true;
             bool foreground = true;
