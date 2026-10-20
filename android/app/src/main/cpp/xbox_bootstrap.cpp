@@ -209,7 +209,10 @@ bool ValidateXbeBounds(const std::vector<uint8_t>& bytes) {
 
 } // namespace
 
-bool PrepareXboxImage(int fd) {
+bool PrepareXboxImage(int fd, uint32_t* loaded_entry,
+                      uint32_t* loaded_kernel_thunk) {
+    if (loaded_entry) *loaded_entry = 0;
+    if (loaded_kernel_thunk) *loaded_kernel_thunk = 0;
     if (fd < 0) {
         XB_INFO("No Xbox game selected; native preboot skipped");
         return false;
@@ -266,7 +269,9 @@ bool PrepareXboxImage(int fd) {
     }
     XB_INFO("Xbox guest image loaded: %zu preload sections, entry=0x%08x, guest base=%p",
             loaded, img.entry, static_cast<void*>(guest));
-    XB_INFO("PREBOOT READY. Guest x86 code has NOT started; static recompilation dispatcher and kernel/XDK remain unlinked.");
+    if (loaded_entry) *loaded_entry = img.entry;
+    if (loaded_kernel_thunk) *loaded_kernel_thunk = img.kernel_thunk;
+    XB_INFO("PREBOOT READY. Guest x86 code has NOT started; Xbox kernel/XDK services are not initialized.");
     return true;
 }
 
