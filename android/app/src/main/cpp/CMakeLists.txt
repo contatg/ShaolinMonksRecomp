@@ -58,7 +58,7 @@ set(SHAOLIN_BUILD_REVISION "unknown" CACHE STRING "Source revision for device tr
 # to the whole main target invalidated every D3D8/Vulkan/GLES C++ object
 # whenever the Git commit changed, even for a one-line edit.
 set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/shaolin_game_trace.cpp"
-    PROPERTIES COMPILE_DEFINITIONS "SHAOLIN_BUILD_REVISION=\\\"${SHAOLIN_BUILD_REVISION}\\\"")
+    PROPERTIES COMPILE_DEFINITIONS "SHAOLIN_BUILD_REVISION=\"${SHAOLIN_BUILD_REVISION}\"")
 # Upstream POSIX guest allocator uses ftruncate but does not include unistd.h.
 # Inject the Android POSIX declaration only for this source, preserving SDK files.
 set_source_files_properties("${XBE_SDK}/runtime/kernel/memory.cpp"
