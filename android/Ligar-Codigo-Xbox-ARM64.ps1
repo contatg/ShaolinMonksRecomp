@@ -32,9 +32,16 @@ $combined=Join-Path $out 'shaolin-guest-dispatch-kernel-arm64.o'
 $hostObjects=@()
 foreach($file in @('memory.cpp.o','log.cpp.o')){
   $match=@(Get-ChildItem $build -Filter $file -File -Recurse |
-    Where-Object {$_.FullName -like '*CMakeFiles\\main.dir*'})
+    Where-Object { $_.FullName -match '[\\/]CMakeFiles[\\/]main\\.dir[\\/]' })
+  if($match.Count -eq 0){
+    Write-Host "Missing preboot object $file: building existing main target incrementally..."
+    & cmake --build $build --target main --parallel 2
+    if($LASTEXITCODE -ne 0){throw "Existing Android main build failed ($LASTEXITCODE)"}
+    $match=@(Get-ChildItem $build -Filter $file -File -Recurse |
+      Where-Object { $_.FullName -match '[\\/]CMakeFiles[\\/]main\\.dir[\\/]' })
+  }
   if($match.Count -ne 1){
-    throw "Expected one real preboot host object $file (found $($match.Count)). Build the existing Android launcher first."
+    throw "Expected one compiled real main object $file; found $($match.Count)."
   }
   $hostObjects += $match[0].FullName
 }
