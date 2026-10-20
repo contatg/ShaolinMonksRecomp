@@ -25,7 +25,7 @@ $all=Join-Path $dir 'android-logcat-full.txt'
 & $adb logcat -d -v threadtime | Out-File -FilePath $all -Encoding utf8
 if($LASTEXITCODE -ne 0){throw 'adb logcat collection failed'}
 $lines=@(Get-Content -LiteralPath $all |
- Select-String -Pattern 'ShaolinXbox|ShaolinMobiu|Fatal signal|SIGSEGV|SIGABRT|libmain\.so|DEBUG|AndroidRuntime|libc.*fatal' |
+ Select-String -Pattern 'ShaolinXbox|ShaolinMobiu|ShaolinGPU|ShaolinAudio|vulkan:|d3d:|xapi:|audio:|Fatal signal|SIGSEGV|SIGABRT|libmain\.so|DEBUG|AndroidRuntime|libc.*fatal' |
  ForEach-Object { $_.Line })
 $filtered=Join-Path $dir 'shaolin-gameboot-errors.txt'
 $lines | Set-Content -LiteralPath $filtered -Encoding UTF8
