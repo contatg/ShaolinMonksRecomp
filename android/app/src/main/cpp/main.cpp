@@ -7,6 +7,7 @@
 #include <kernel/kernel.h>
 #include <core/input.h>
 #include <string>
+#include "shaolin_game_trace.h"
 namespace shaolin_android {
 void StartXboxLogcat();
 void ConfigureGameRenderer(SDL_Window* window, bool opengl);
@@ -397,6 +398,9 @@ int main(int argc, char** argv) {
     int render_preference = 75;
     int source_fd = -1;
     bool use_opengl = false;
+#ifdef SHAOLIN_REAL_GAME_BOOT
+    const char* trace_path = nullptr;
+#endif
     for (int i = 1; i + 1 < argc; ++i) {
         if (!std::strcmp(argv[i], "--fps")) {
             int input = std::atoi(argv[++i]);
@@ -406,11 +410,21 @@ int main(int argc, char** argv) {
             if (input == 50 || input == 75 || input == 100) render_preference = input;
         } else if (!std::strcmp(argv[i], "--renderer")) {
             use_opengl = !std::strcmp(argv[++i], "opengl");
+#ifdef SHAOLIN_REAL_GAME_BOOT
+        } else if (!std::strcmp(argv[i], "--trace-file")) {
+            trace_path = argv[++i];
+#endif
         } else if (!std::strcmp(argv[i], "--game-fd")) {
             const int fd = std::atoi(argv[++i]);
             if (fd >= 0 && fd < 1048576) source_fd = fd;
         }
     }
+#ifdef SHAOLIN_REAL_GAME_BOOT
+    shaolin_android::TraceInit(trace_path);
+    shaolin_android::Trace("NATIVE_MAIN_ENTER renderer=%s fps=%d resolution=%d source_fd=%s",
+                           use_opengl ? "GLES3" : "Vulkan", fps_limit,
+                           render_preference, source_fd >= 0 ? "present" : "missing");
+#endif
     SMLOG("GAME settings: FPS=%d, render scale=%d%%, GPU=%s",
           fps_limit, render_preference, use_opengl ? "OpenGL ES 3" : "Vulkan");
     ProbeXboxSource(source_fd);
@@ -421,11 +435,15 @@ int main(int argc, char** argv) {
     std::vector<uint8_t> verified_xbe;
     bool xbox_image_ready = false;
     if (source_fd >= 0) {
+        shaolin_android::Trace("ISO_LOAD_BEGIN");
         xbox_image_ready = shaolin_android::LoadVerifiedXboxForBoot(source_fd, verified_xbe);
+        shaolin_android::Trace("ISO_LOAD_DONE success=%d xbe_bytes=%zu",
+                               xbox_image_ready ? 1 : 0, verified_xbe.size());
         if (!xbox_image_ready)
             SMERR("GAME BOOT: ISO verification / D: mount failed");
     } else {
         SMERR("GAME BOOT: no original ISO selected in launcher");
+        shaolin_android::Trace("ISO_LOAD_FAIL no ISO fd passed");
     }
 #else
     if (source_fd >= 0) {
@@ -434,11 +452,20 @@ int main(int argc, char** argv) {
             SMERR("Xbox preboot failed");
     }
 #endif
+#ifdef SHAOLIN_REAL_GAME_BOOT
+    shaolin_android::Trace("SDL_INIT_BEGIN");
+#endif
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS)) {
         SMERR("SDL_Init: %s", SDL_GetError());
+#ifdef SHAOLIN_REAL_GAME_BOOT
+        shaolin_android::Trace("SDL_INIT_FAIL %s", SDL_GetError());
+#endif
         return 1;
     }
+#ifdef SHAOLIN_REAL_GAME_BOOT
+    shaolin_android::Trace("SDL_INIT_OK");
+#endif
     // SDL Android needs GLES3 configured before creating its EGL window.
     if (use_opengl) {
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
@@ -452,11 +479,27 @@ int main(int argc, char** argv) {
                                            SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (!window) {
         SMERR("SDL_CreateWindow: %s", SDL_GetError());
+#ifdef SHAOLIN_REAL_GAME_BOOT
+        shaolin_android::Trace("GAME_WINDOW_FAIL %s", SDL_GetError());
+#endif
         SDL_Quit();
         return 2;
     }
 #ifdef SHAOLIN_REAL_GAME_BOOT
+    shaolin_android::Trace("GAME_WINDOW_OK renderer=%s", use_opengl ? "GLES3" : "Vulkan");
+    if (!xbox_image_ready) {
+        shaolin_android::Trace("ABORT_GAMEBOOT: ISO/XBE not validated; avoid unexplained black window");
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+                                 "Shaolin Monks - ISO inválida",
+                                 "Não foi possível abrir ou validar o default.xbe da ISO. Veja o registro GameBoot.",
+                                 window);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 3;
+    }
+    shaolin_android::Trace("GAMEPAD_INIT_BEGIN");
     input::Init();
+    shaolin_android::Trace("GAMEPAD_INIT_OK");
     shaolin_android::ConfigureGameRenderer(window, use_opengl);
     shaolin_android::SetGameRenderPercent(render_preference);
     shaolin_android::SetGameFpsCap(fps_limit);
@@ -472,13 +515,16 @@ int main(int argc, char** argv) {
         } else {
             const std::string data_dir(pref);
             SMLOG("GAME BOOT: invoking REAL kernel::Boot with original Xbox XBE and mounted D: ISO");
+            shaolin_android::Trace("KERNEL_BOOT_BEGIN xbe_bytes=%zu", verified_xbe.size());
             // Guest threads execute independently from SDL's window thread.
             // kernel::Boot returns after scheduling the first guest CPU entry.
             if (!kernel::Boot(std::move(verified_xbe), "default.xbe",
                               data_dir + "/disc", data_dir + "/hdd")) {
                 SMERR("GAME BOOT FAILED: kernel::Boot returned false; inspect ShaolinXboxKernel");
+                shaolin_android::Trace("KERNEL_BOOT_FAILED false (see Xbox kernel stderr)");
             } else {
                 SMLOG("GAME BOOT STARTED: Xbox guest entry thread launched; inspect ShaolinXboxKernel");
+                shaolin_android::Trace("KERNEL_BOOT_RETURNED_TRUE guest thread scheduled");
             }
         }
     }
@@ -490,7 +536,15 @@ int main(int argc, char** argv) {
     SMLOG("GAME RENDER ACTIVE: Xbox D3D8 draw/present -> %s; waiting for guest frames",
           use_opengl ? "OpenGL ES 3" : "Shaolin Vulkan");
     bool alive = true;
+    Uint64 last_watchdog = SDL_GetTicks();
+    shaolin_android::Trace("GAME_LOOP_ENTER waiting for real Xbox GPU Present");
     while (alive) {
+        const Uint64 clock_ms = SDL_GetTicks();
+        if (clock_ms - last_watchdog >= 5000) {
+            last_watchdog = clock_ms;
+            shaolin_android::Trace("GAME_LOOP_ALIVE gpu_presents=%llu",
+                static_cast<unsigned long long>(shaolin_android::TraceFrameCount()));
+        }
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_TERMINATING)
