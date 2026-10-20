@@ -143,16 +143,18 @@ bool ReadGameImage(int source_fd, std::vector<uint8_t>& xbe, std::unique_ptr<ker
         return false;
     }
 
-    // Linux /proc/self/fd/N refers to the same Android-granted file, and the
-    // upstream Disc::Open reopens it read-only to own the file lifetime.
-    // Most local SAF providers expose a seekable regular file this way.
-    const std::string fd_path = "/proc/self/fd/" + std::to_string(source_fd);
+    // Android SAF grants access to THIS fd. Some providers forbid reopening
+    // /proc/self/fd/N even though this same fd supports pread(). Duplicate it
+    // instead; Disc owns the dup and reads the ISO through pread without
+    // copying gigabytes into the app. The Java ParcelFileDescriptor remains
+    // the caller's property.
     auto disc = std::make_unique<kernel::Disc>();
     std::string error;
-    if (!disc->Open(fd_path, error)) {
-        XB_ERR("XDVDFS cannot open selected disc: %s (SAF provider may be non-seekable)", error.c_str());
+    if (!disc->OpenFd(source_fd, error)) {
+        XB_ERR("XDVDFS OpenFd failed: %s (original SAF descriptor was readable)", error.c_str());
         return false;
     }
+    XB_INFO("XDVDFS opened through owned Android SAF fd, no procfs reopen");
     const kernel::Disc::Entry* entry = disc->Find("default.xbe");
     if (!entry || entry->dir || entry->size < 0x180 || entry->size > kMaxXbeBytes) {
         XB_ERR("XDVDFS has no valid default.xbe entry");
