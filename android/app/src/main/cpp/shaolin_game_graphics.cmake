@@ -44,7 +44,7 @@ string(SUBSTRING "${SHAOLIN_RENDER_THREAD}" ${SHAOLIN_SAME_END} -1 SHAOLIN_SUFFI
 set(SHAOLIN_RENDER_THREAD
   "${SHAOLIN_PREFIX}bool Same(const uint8_t* a, const uint8_t* b, size_t n) { return std::memcmp(a,b,n)==0; }\n\n${SHAOLIN_SUFFIX}")
 set(SHAOLIN_ARM64_RENDER_THREAD "${CMAKE_CURRENT_BINARY_DIR}/shaolin_render_thread_arm64.cpp")
-file(WRITE "${SHAOLIN_ARM64_RENDER_THREAD}" "${SHAOLIN_RENDER_THREAD}")
+shaolin_write_if_changed("${SHAOLIN_ARM64_RENDER_THREAD}" "${SHAOLIN_RENDER_THREAD}")
 
 # GLES consumes converted float vertices. Keep Vulkan's raw vertex fast path.
 file(READ "${SHAOLIN_ADAPTED}/vertex.cpp" SHAOLIN_VERTEX)
@@ -52,7 +52,7 @@ shaolin_replace_once(SHAOLIN_VERTEX
     "bool raw = kRawVertices && RawReadable(s, inputs);"
     "bool raw = !shaolin_android::UseOpenGL() && kRawVertices && RawReadable(s, inputs);")
 set(SHAOLIN_ANDROID_VERTEX_CPP "${CMAKE_CURRENT_BINARY_DIR}/shaolin_vertex_android.cpp")
-file(WRITE "${SHAOLIN_ANDROID_VERTEX_CPP}"
+shaolin_write_if_changed("${SHAOLIN_ANDROID_VERTEX_CPP}"
     "namespace shaolin_android { bool UseOpenGL(); }\n${SHAOLIN_VERTEX}")
 
 find_library(shaolin_gles3 GLESv3 REQUIRED)
