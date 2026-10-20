@@ -24,6 +24,38 @@ $logDir = Join-Path $root 'android-local\logs'
 $output = Join-Path $root 'android-local\output'
 New-Item -ItemType Directory -Force -Path $logDir, $output | Out-Null
 $log = Join-Path $logDir 'apk-with-recompiled-game.log'
+# Android Gradle Plugin cannot infer SDK from a previously configured
+# CMake cache. Set both environment variables and a project-local property.
+# local.properties is kept on this PC only; never upload SDK locations.
+$sdkCandidates=@()
+if($env:ANDROID_HOME){$sdkCandidates+= $env:ANDROID_HOME}
+if($env:ANDROID_SDK_ROOT){$sdkCandidates+= $env:ANDROID_SDK_ROOT}
+$sdkCandidates+= (Join-Path $env:LOCALAPPDATA 'Android\Sdk')
+$androidSdkHome=$null
+foreach($candidate in $sdkCandidates){
+    if(-not $candidate){continue}
+    $ndk=Join-Path $candidate 'ndk\28.2.13676358'
+    $platform=Join-Path $candidate 'platforms\android-34'
+    if((Test-Path -LiteralPath $ndk -PathType Container) -and
+       (Test-Path -LiteralPath $platform -PathType Container)){
+        $androidSdkHome=(Resolve-Path -LiteralPath $candidate).Path
+        break
+    }
+}
+if(-not $androidSdkHome){
+    throw 'Android SDK with NDK 28.2.13676358 and platform android-34 not found. Install these in Android Studio SDK Manager.'
+}
+$env:ANDROID_HOME=$androidSdkHome
+$env:ANDROID_SDK_ROOT=$androidSdkHome
+# Escape Windows path separators for Java's .properties file reader.
+$sdkProp=$androidSdkHome.Replace('\','/').Replace(':','\:')
+$localProps=Join-Path $PSScriptRoot 'local.properties'
+[System.IO.File]::WriteAllText(
+    $localProps,
+    "sdk.dir=$sdkProp" + [Environment]::NewLine,
+    [System.Text.UTF8Encoding]::new($false))
+Write-Host "Android SDK configured locally: $androidSdkHome"
+
 Write-Host 'Building a PRIVATE ARM64 APK with the actual Shaolin guest recompilation.'
 Write-Host 'Original 128 C++ partitions will be reused; only changed targets are rebuilt.'
 Write-Host 'Public launcher and Krypt manager source code are kept intact.'
