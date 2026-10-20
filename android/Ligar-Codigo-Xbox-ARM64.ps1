@@ -98,7 +98,8 @@ foreach($symbol in $modSymbols) {
 }
 $remaining=@(Get-Content $missing | Sort-Object -Unique)
 Write-Host "Linked ARM64 object: $combined"
-Write-Host "Still undefined symbols: $($remaining.Count)"`nWrite-Host 'Kernel memory/log, ordinal names, and actual Krypt Lua routine engine included; Android game boot/XDK remain.'
+Write-Host "Still undefined symbols: $($remaining.Count)"
+Write-Host 'Kernel memory/log, ordinal names, and actual Krypt Lua routine engine included; Android game boot/XDK remain.'
 Write-Host "Report: $missing"
 Write-Host "First unresolved symbols:"
 $remaining | Select-Object -First 40
