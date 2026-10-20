@@ -1,0 +1,166 @@
+name: Shaolin ARM64 GameBoot (private sources)
+
+# This builds the REAL Xbox guest, not the launcher-only public validation.
+# The copyrighted translated game C++ must live in a separate PRIVATE repo.
+# Never publish raw translated sources or an unencrypted game-bearing APK.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shaolin-private-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gameboot:
+    if: github.repository == 'contatg/ShaolinMonksRecomp'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      PRIVATE_REPO: ${{ secrets.SHAOLIN_PRIVATE_SOURCES_REPO }}
+      PRIVATE_TOKEN: ${{ secrets.SHAOLIN_PRIVATE_SOURCES_TOKEN }}
+      ARCHIVE_PASSWORD: ${{ secrets.SHAOLIN_APK_ARCHIVE_PASSWORD }}
+      GRADLE_OPTS: -Dorg.gradle.daemon=false -Dfile.encoding=UTF-8
+    steps:
+      - name: Check private build prerequisites before installing large toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$PRIVATE_REPO" || -z "$PRIVATE_TOKEN" || -z "$ARCHIVE_PASSWORD" ]]; then
+            echo "::error::Required GitHub Actions secrets: SHAOLIN_PRIVATE_SOURCES_REPO, SHAOLIN_PRIVATE_SOURCES_TOKEN and SHAOLIN_APK_ARCHIVE_PASSWORD. Do not upload game sources into this public repository."
+            exit 1
+          fi
+          if [[ "$PRIVATE_REPO" == "contatg/ShaolinMonksRecomp" ]]; then
+            echo "::error::The generated Xbox sources must be in a SEPARATE private GitHub repository."
+            exit 1
+          fi
+          if (( ${#ARCHIVE_PASSWORD} < 16 )); then
+            echo "::error::Use an archive password of at least 16 characters."
+            exit 1
+          fi
+
+      - name: Checkout public Shaolin port, on selected branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout privately generated Xbox translation
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.SHAOLIN_PRIVATE_SOURCES_REPO }}
+          token: ${{ secrets.SHAOLIN_PRIVATE_SOURCES_TOKEN }}
+          path: android/generated/shaolin
+          persist-credentials: false
+
+      - name: Validate private translation (do not reveal file content)
+        shell: bash
+        run: |
+          set -euo pipefail
+          private="android/generated/shaolin"
+          for needed in x86_func_mapping.cpp x86_recomp_shared.h image_symbols.h mod_routine_targets.h; do
+            if [[ ! -s "$private/$needed" ]]; then
+              echo "::error::Private translation is missing $needed"
+              exit 1
+            fi
+          done
+          for n in $(seq 0 127); do
+            if [[ ! -s "$private/x86_recomp.$n.cpp" ]]; then
+              echo "::error::Private translation is missing partition $n"
+              exit 1
+            fi
+          done
+          if find "$private" -type f \( -iname '*.iso' -o -iname '*.xbe' -o -iname '*.xiso' -o -iname '*.wad' \) | grep -q .; then
+            echo "::error::Private source repository must not contain original game discs, executables or assets."
+            exit 1
+          fi
+          echo "All 128 private recompiled C++ partitions and required headers are available."
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+          cache-read-only: false
+
+      - name: Install Android SDK 34, NDK and CMake
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" --install "platforms;android-34" "ndk;28.2.13676358" "cmake;3.31.6"
+
+      - name: Fetch pinned SDL3 and Xbox kernel (public open source)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch release-3.4.16 https://github.com/libsdl-org/SDL.git android/third_party/SDL
+          mkdir -p android/third_party/XboxXBERecomp
+          git -C android/third_party/XboxXBERecomp init -q
+          git -C android/third_party/XboxXBERecomp remote add origin https://github.com/TGP482/XboxXBERecomp.git
+          git -C android/third_party/XboxXBERecomp fetch -q --depth 1 origin 40e9c35451305f09ca9d86f677e4b9c2c37ff26b
+          git -C android/third_party/XboxXBERecomp checkout -q --detach FETCH_HEAD
+
+      - name: Prepare adapted Shaolin D3D8 and public Lua engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/release/adapted build/release/_deps/shaolin_lua-src
+          python3 tools/prepare_recomp_runtime.py \
+            --sdk android/third_party/XboxXBERecomp \
+            --out build/release/adapted
+          curl --fail --location --retry 3 --silent --show-error \
+            https://www.lua.org/ftp/lua-5.4.9.tar.gz \
+            -o "$RUNNER_TEMP/lua-5.4.9.tar.gz"
+          tar -xzf "$RUNNER_TEMP/lua-5.4.9.tar.gz" \
+            -C build/release/_deps/shaolin_lua-src --strip-components=1
+          test -s build/release/_deps/shaolin_lua-src/src/lua.h
+
+      - name: Compile actual ARM64 Xbox game and package Android APK
+        shell: bash
+        working-directory: android
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --build-cache --stacktrace \
+            -PshaolinNativeGame=true -PshaolinRevision="$GITHUB_SHA" \
+            assembleDebug
+          apk=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$apk"
+          unzip -l "$apk" | grep -q 'lib/arm64-v8a/libmain.so'
+          echo "Real GameBoot APK compiled and verified locally on runner (not uploaded raw)."
+
+      - name: Encrypt full game APK before artifact upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq p7zip-full >/dev/null
+          mkdir -p encrypted
+          7z a -bd -y -t7z -mhe=on -mx=1 -p"$ARCHIVE_PASSWORD" \
+            encrypted/ShaolinMobiu-ARM64-GameBoot.7z \
+            android/app/build/outputs/apk/debug/app-debug.apk >/dev/null
+          test -s encrypted/ShaolinMobiu-ARM64-GameBoot.7z
+          echo "Encrypted APK created; neither original game files nor raw APK are uploaded."
+
+      - name: Upload encrypted GameBoot APK only
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShaolinMobiu-ARM64-GameBoot-encrypted
+          path: encrypted/ShaolinMobiu-ARM64-GameBoot.7z
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Summarize private build
+        if: success()
+        shell: bash
+        run: |
+          echo "### Private ARM64 GameBoot complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "Only an AES-256 encrypted 7z containing the full game-bearing APK was uploaded." >> "$GITHUB_STEP_SUMMARY"
+          echo "Download the workflow artifact and decrypt locally using SHAOLIN_APK_ARCHIVE_PASSWORD." >> "$GITHUB_STEP_SUMMARY"
+          echo "No commercial ISO, XBE or game-derived C++ is published in this repository or logs." >> "$GITHUB_STEP_SUMMARY"
