@@ -61,14 +61,25 @@ try {
     $androidHome = if ($env:ANDROID_HOME) { $env:ANDROID_HOME }
         elseif ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT }
         else { "$env:LOCALAPPDATA\Android\Sdk" }
-    if (-not (Test-Path (Join-Path $androidHome 'ndk\28.2.13676358'))) {
-        throw "NDK 28.2.13676358 missing: $androidHome. Install from Android Studio SDK Manager."
-    }
-    if (-not (Test-Path (Join-Path $androidHome 'cmake\3.31.6'))) {
-        throw "CMake 3.31.6 missing from Android SDK. Install it from SDK Manager."
-    }
     $env:ANDROID_HOME = $androidHome
     $env:ANDROID_SDK_ROOT = $androidHome
+    $ndkInstalled = Test-Path (Join-Path $androidHome 'ndk\28.2.13676358')
+    $cmakeInstalled = Test-Path (Join-Path $androidHome 'cmake\3.31.6')
+    $platformInstalled = Test-Path (Join-Path $androidHome 'platforms\android-34')
+    if (-not ($ndkInstalled -and $cmakeInstalled -and $platformInstalled)) {
+        $toolsDir = Join-Path $androidHome 'cmdline-tools'
+        $sdkManagers = @(Get-ChildItem -Path $toolsDir -Filter 'sdkmanager.bat' -Recurse -File -ErrorAction SilentlyContinue)
+        if (-not $sdkManagers.Count) {
+            throw "Android SDK components missing and sdkmanager.bat not found in $toolsDir. Install Android SDK Command-line Tools from Android Studio."
+        }
+        Say "Installing missing Android SDK 34, NDK 28.2.13676358 and CMake 3.31.6..."
+        Invoke-Logged 'Android SDK install' $sdkManagers[0].FullName @('--install',
+            'platforms;android-34','ndk;28.2.13676358','cmake;3.31.6')
+        if (-not (Test-Path (Join-Path $androidHome 'ndk\28.2.13676358')) -or
+            -not (Test-Path (Join-Path $androidHome 'cmake\3.31.6'))) {
+            throw "SDK components remain missing. Accept Android SDK licenses in Android Studio and retry."
+        }
+    }
     Need java
     if (-not (Test-Path (Join-Path $Llvm 'bin\clang++.exe'))) {
         throw "LLVM is missing from $Llvm. Supply -Llvm 'C:\Program Files\LLVM'."
