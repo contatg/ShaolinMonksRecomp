@@ -125,6 +125,7 @@ class OpenGLESBackend final : public Backend {
     GLint tex_enabled_ = -1;
     uint32_t cached_header_ = 0;
     uint32_t cached_data_ = 0;
+    uint32_t cached_palette_ = 0;
     uint64_t cached_epoch_ = 0;
     uint64_t textured_draws_ = 0;
     GLint pos_ = -1, color_ = -1;
@@ -237,7 +238,7 @@ void main() { outColor=c*(texEnabled != 0 ? texture(image,t) : vec4(1.0)); })";
     // unconditionally multiplied by white and therefore showed white quads.
     // This starts with the primary 2D stage only; programmable combiners,
     // render-to-texture and 3D vertex shaders still need the Vulkan backend.
-    bool BindXboxTexture(uint32_t header) {
+    bool BindXboxTexture(uint32_t header, uint32_t palette_handle) {
         if (!header || !tex_) return false;
         TextureDesc desc{};
         if (!Describe(header, desc)) return false;
@@ -258,17 +259,30 @@ void main() { outColor=c*(texEnabled != 0 ? texture(image,t) : vec4(1.0)); })";
         }
         if (!mem::IsCommitted(desc.data + total - 1)) return false;
 
-        const uint64_t epoch = DirtyEpoch(desc.data);
+        uint32_t palette_data = 0;
+        const uint32_t* palette = nullptr;
+        if (desc.format == 0x0b) {
+            if (!palette_handle || !mem::IsCommitted(palette_handle) ||
+                !mem::IsCommitted(palette_handle + 4)) return false;
+            palette_data = mem::VirtualFromPhysical(kernel::R32(palette_handle + 4));
+            if (uint64_t(palette_data) + 1024 > 0x100000000ull) return false;
+            if (!mem::IsCommitted(palette_data) ||
+                !mem::IsCommitted(palette_data + 1023)) return false;
+            palette = static_cast<const uint32_t*>(kernel::HostPtr(palette_data));
+        }
+        const uint64_t epoch = DirtyEpoch(desc.data) +
+                               (palette_data ? DirtyEpoch(palette_data) : 0);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, tex_);
-        if (cached_header_ == header && cached_data_ == desc.data && cached_epoch_ == epoch)
+        if (cached_header_ == header && cached_data_ == desc.data &&
+            cached_palette_ == palette_data && cached_epoch_ == epoch)
             return true;
 
         const uint8_t* guest = static_cast<const uint8_t*>(kernel::HostPtr(desc.data));
         if (!guest) return false;
         std::vector<uint8_t> bytes;
         uint32_t src_pitch = 0;
-        DecodeLevel(desc, 0, 0, guest, nullptr, bytes, src_pitch);
+        DecodeLevel(desc, 0, 0, guest, palette, bytes, src_pitch);
         if (bytes.empty()) return false;
         if (fmt.compressed) {
             std::vector<uint8_t> expanded;
@@ -307,6 +321,7 @@ void main() { outColor=c*(texEnabled != 0 ? texture(image,t) : vec4(1.0)); })";
             return false;
         }
         cached_header_ = header;
+        cached_palette_ = palette_data;
         cached_data_ = desc.data;
         cached_epoch_ = epoch;
         static uint64_t upload_logs = 0;
@@ -332,7 +347,7 @@ void main() { outColor=c*(texEnabled != 0 ? texture(image,t) : vec4(1.0)); })";
         }
         if (!a.vertex_count || a.vertex_count > 65536) return;
         struct Vertex { float x,y,z,w,r,g,b,alpha,u,v; };
-        const bool has_texture = s.textures[0] && BindXboxTexture(s.textures[0]);
+        const bool has_texture = s.textures[0] && BindXboxTexture(s.textures[0], s.palettes[0]);
         std::vector<Vertex> verts;
         verts.reserve(a.vertex_count);
         for (uint32_t i = 0; i < a.vertex_count; ++i) {
