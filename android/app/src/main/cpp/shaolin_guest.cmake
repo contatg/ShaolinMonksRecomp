@@ -8,6 +8,12 @@
 # than shipping an APK that falsely claims it can execute the title.
 option(SHAOLIN_ENABLE_GUEST_OBJECTS
     "Compile locally generated Shaolin game code into ARM64 objects" OFF)
+option(SHAOLIN_EMBED_NATIVE_GUEST
+    "Private local APK: embed recomp Xbox functions into SDL main library" OFF)
+if(SHAOLIN_EMBED_NATIVE_GUEST AND NOT SHAOLIN_ENABLE_GUEST_OBJECTS)
+    message(FATAL_ERROR "Embedding Xbox guest code requires SHAOLIN_ENABLE_GUEST_OBJECTS=ON")
+endif()
+
 if(SHAOLIN_ENABLE_GUEST_OBJECTS)
     get_filename_component(SHAOLIN_REPO_ROOT
         "${CMAKE_CURRENT_LIST_DIR}/../../../../.." ABSOLUTE)
@@ -144,6 +150,26 @@ if(SHAOLIN_ENABLE_GUEST_OBJECTS)
         ${log-lib} m dl)
     target_link_options(shaolin_game_link_probe PRIVATE
         "-Wl,--no-undefined" "-Wl,-z,max-page-size=16384")
+    if(SHAOLIN_EMBED_NATIVE_GUEST)
+        # In contrast to the independent link probe, all guest/CPU/Krypt
+        # code now lives INSIDE the native SDL main library. Share one real
+        # Xbox guest memory manager and logger from the original preboot.
+        target_sources(main PRIVATE
+            $<TARGET_OBJECTS:shaolin_guest_arm64>
+            $<TARGET_OBJECTS:shaolin_dispatch_arm64>
+            $<TARGET_OBJECTS:shaolin_kernel_symbols_arm64>
+            $<TARGET_OBJECTS:shaolin_krypt_routines_arm64>
+            "${CMAKE_CURRENT_SOURCE_DIR}/xbox_game_runtime.cpp")
+        target_include_directories(main PRIVATE
+            "${SHAOLIN_PRIVATE_GEN}"
+            "${SHAOLIN_REPO_ROOT}/src")
+        target_compile_definitions(main PRIVATE SHAOLIN_NATIVE_GUEST=1)
+        target_link_libraries(main PRIVATE m)
+        target_link_options(main PRIVATE "-Wl,--no-undefined")
+        message(STATUS
+            "Private game APK: 129 Xbox guest objects + CPU dispatcher + Krypt Lua embedded into libmain.so")
+    endif()
+
     # Both object targets are only compiled locally, not packaged into a
     # playable APK before full kernel/XDK and graphics integration.
     message(STATUS
