@@ -162,6 +162,15 @@ if(SHAOLIN_ENABLE_GUEST_OBJECTS)
     set_target_properties(shaolin_xbox_boot_arm64 PROPERTIES
         POSITION_INDEPENDENT_CODE ON)
 
+    # Android-specific app metadata for the genuine Xbox boot coordinator,
+    # without pulling Windows launcher/controller dependencies into Android.
+    add_library(shaolin_android_boot_host_arm64 OBJECT EXCLUDE_FROM_ALL
+        "${CMAKE_CURRENT_SOURCE_DIR}/shaolin_android_app.cpp")
+    target_include_directories(shaolin_android_boot_host_arm64 PRIVATE
+        "${XBE_SDK}/runtime" "${SHAOLIN_PRIVATE_GEN}")
+    set_target_properties(shaolin_android_boot_host_arm64 PROPERTIES
+        POSITION_INDEPENDENT_CODE ON)
+
     # Build a genuine Android shared-library link probe with all recompiled
     # guest functions + Xbox CPU dispatch + original Krypt Lua engine.
     # This deliberately has NO game-entry invocation and is NOT packaged into
