@@ -25,13 +25,25 @@ $nm=Join-Path $bin 'llvm-nm.exe'
 if(!(Test-Path $ld) -or !(Test-Path $nm)){throw "NDK linker or nm is missing under $bin"}
 $out=Join-Path $root 'android-local\link'
 New-Item -ItemType Directory -Force $out | Out-Null
-$combined=Join-Path $out 'shaolin-guest-dispatch-arm64.o'
-$inputs=@($guest | ForEach-Object {$_.FullName}) + @($dispatch[0].FullName)
+$combined=Join-Path $out 'shaolin-guest-dispatch-kernel-arm64.o'
+# Existing libmain.so preboot already compiles the pinned real memory and log
+# implementation. Reuse those objects for a private relocatable Xbox link.
+# Do not substitute dummy functions: we need working memory and logging.
+$hostObjects=@()
+foreach($file in @('memory.cpp.o','log.cpp.o')){
+  $match=@(Get-ChildItem $build -Filter $file -File -Recurse |
+    Where-Object {$_.FullName -like '*CMakeFiles\\main.dir*'})
+  if($match.Count -ne 1){
+    throw "Expected one real preboot host object $file (found $($match.Count)). Build the existing Android launcher first."
+  }
+  $hostObjects += $match[0].FullName
+}
+$inputs=@($guest | ForEach-Object {$_.FullName}) + @($dispatch[0].FullName) + $hostObjects
 # Passing inputs via response-file prevents Windows' 32KiB cmd-line limit.
 $responseFile=Join-Path $out 'link-inputs.rsp'
 $lines=@('-r','-o',('"'+$combined+'"')) + @($inputs|ForEach-Object{'"'+$_+'"'})
 [System.IO.File]::WriteAllLines($responseFile,$lines,[System.Text.UTF8Encoding]::new($false))
-Write-Host "Linking $($guest.Count) guest objects + 1 dispatcher (relocatable ARM64)..."
+Write-Host "Linking $($guest.Count) guest objects + dispatcher + real kernel memory/log (relocatable ARM64)..."
 & $ld ('@'+$responseFile)
 if($LASTEXITCODE -ne 0){throw "ARM64 ld.lld -r failed (exit $LASTEXITCODE)"}
 $defined=Join-Path $out 'shaolin-linked-defined.txt'
@@ -49,7 +61,7 @@ foreach($name in $names){
 }
 $remaining=@(Get-Content $missing | Sort-Object -Unique)
 Write-Host "Linked ARM64 object: $combined"
-Write-Host "Still undefined symbols: $($remaining.Count)"
+Write-Host "Still undefined symbols: $($remaining.Count)"`nWrite-Host 'Real kernel memory and log object files included; guest initialization/XDK still pending.'
 Write-Host "Report: $missing"
 Write-Host "First unresolved symbols:"
 $remaining | Select-Object -First 40
