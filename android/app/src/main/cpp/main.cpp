@@ -490,8 +490,8 @@ int main(int argc, char** argv) {
     if (!xbox_image_ready) {
         shaolin_android::Trace("ABORT_GAMEBOOT: ISO/XBE not validated; avoid unexplained black window");
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-                                 "Shaolin Monks - ISO inválida",
-                                 "Não foi possível abrir ou validar o default.xbe da ISO. Veja o registro GameBoot.",
+                                 "Shaolin Monks - Falha na leitura",
+                                 "Não foi possível ler ou validar a ISO selecionada. O arquivo pode estar correto; verifique o log GameBoot.",
                                  window);
         SDL_DestroyWindow(window);
         SDL_Quit();
