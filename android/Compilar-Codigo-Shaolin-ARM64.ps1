@@ -28,9 +28,20 @@ function Need([string]$tool) {
 }
 function Invoke-Logged([string]$label, [string]$exe, [string[]]$arguments) {
     Say ("RUN: " + $label)
-    & $exe @arguments 2>&1 | Tee-Object -FilePath $log -Append
-    if ($LASTEXITCODE -ne 0) {
-        throw "$label failed (exit $LASTEXITCODE). See $log"
+    # Windows PowerShell 5 treats native stderr (including Git progress
+    # "Cloning into...") as a terminating NativeCommandError when
+    # ErrorActionPreference is Stop. Capture both streams without interpreting
+    # stderr text as command failure; trust the actual process exit code.
+    $savedPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $exe @arguments 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log -Append
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $savedPreference
+    }
+    if ($exitCode -ne 0) {
+        throw "$label failed (exit $exitCode). See $log"
     }
 }
 try {
