@@ -9,6 +9,27 @@ param(
     [string]$PublicRepo = 'contatg/ShaolinMonksRecomp'
 )
 $ErrorActionPreference = 'Stop'
+# Unlike a PowerShell pipeline, this writes secret bytes to gh stdin without
+# appending CRLF: the saved local 7z password will decrypt the cloud artifact.
+function Set-CloudSecret([string]$name, [string]$value, [string]$repository) {
+    if([string]::IsNullOrEmpty($value)){ throw "Empty cloud secret: $name" }
+    $psi=New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName=(Get-Command gh -ErrorAction Stop).Source
+    $psi.Arguments="secret set $name --repo $repository"
+    $psi.UseShellExecute=$false
+    $psi.CreateNoWindow=$true
+    $psi.RedirectStandardInput=$true
+    $psi.RedirectStandardError=$true
+    $proc=New-Object System.Diagnostics.Process
+    $proc.StartInfo=$psi
+    [void]$proc.Start()
+    $proc.StandardInput.Write($value)
+    $proc.StandardInput.Close()
+    $problem=$proc.StandardError.ReadToEnd()
+    $proc.WaitForExit()
+    if($proc.ExitCode -ne 0) { throw "Failed to set cloud secret $name : $problem" }
+    $proc.Dispose()
+}
 $root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $gen=Join-Path $PSScriptRoot 'generated\shaolin'
 if(!(Get-Command gh -ErrorAction SilentlyContinue)){
@@ -91,14 +112,12 @@ $bstr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
 try {
     $token=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
     if([string]::IsNullOrWhiteSpace($token)){throw 'No private source token supplied'}
-    $token | & gh secret set SHAOLIN_PRIVATE_SOURCES_TOKEN --repo $PublicRepo
-    if($LASTEXITCODE -ne 0){throw 'Failed to register private read-only source token'}
+    Set-CloudSecret 'SHAOLIN_PRIVATE_SOURCES_TOKEN' $token $PublicRepo
 } finally {
     [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
     Remove-Variable token -ErrorAction SilentlyContinue
 }
-$PrivateRepo | & gh secret set SHAOLIN_PRIVATE_SOURCES_REPO --repo $PublicRepo
-if($LASTEXITCODE -ne 0){throw 'Could not register private source repository name'}
+Set-CloudSecret 'SHAOLIN_PRIVATE_SOURCES_REPO' $PrivateRepo $PublicRepo
 # 32 random bytes, generated on YOUR PC only and saved under android-local
 # (gitignored). Actions uploads an AES256 encrypted archive, never raw APK.
 $keyFile=Join-Path $root 'android-local\github-gameboot-archive-password.txt'
@@ -111,8 +130,7 @@ if(Test-Path -LiteralPath $keyFile){
     $pass=[Convert]::ToBase64String($random)
     [IO.File]::WriteAllText($keyFile,$pass,[Text.UTF8Encoding]::new($false))
 }
-$pass | & gh secret set SHAOLIN_APK_ARCHIVE_PASSWORD --repo $PublicRepo
-if($LASTEXITCODE -ne 0){throw 'Could not save encrypted APK password as GitHub secret'}
+Set-CloudSecret 'SHAOLIN_APK_ARCHIVE_PASSWORD' $pass $PublicRepo
 & gh workflow run android-private-gameboot.yml --repo $PublicRepo --ref android-arm64-bringup
 if($LASTEXITCODE -ne 0){throw 'Unable to dispatch full private ARM64 GameBoot workflow'}
 Write-Host ''
