@@ -25,6 +25,25 @@ foreach(f d3d8.cpp vertex.cpp shaders.cpp render_thread.cpp)
             "Missing SHAOLIN-SPECIFIC XDK graphics adaptation ${SHAOLIN_ADAPTED}/${f}. Configure the native PC project first.")
     endif()
 endforeach()
+# ARM64 has no SSE4.1. The pinned Linux render thread contains an
+# x86-only 16-byte state comparison. Replace precisely that function with
+# equivalent std::memcmp, preserving the rest of its threading/ordering.
+file(READ "${SHAOLIN_ADAPTED}/render_thread.cpp" SHAOLIN_RENDER_THREAD)
+string(REPLACE "#include <smmintrin.h>" "// portable ARM64 state comparison"
+       SHAOLIN_RENDER_THREAD "${SHAOLIN_RENDER_THREAD}")
+string(FIND "${SHAOLIN_RENDER_THREAD}" "bool Same(const uint8_t* a, const uint8_t* b, size_t n) {" SHAOLIN_SAME_BEGIN)
+string(FIND "${SHAOLIN_RENDER_THREAD}" "using Clock = std::chrono::steady_clock;" SHAOLIN_SAME_END)
+if(SHAOLIN_SAME_BEGIN EQUAL -1 OR SHAOLIN_SAME_END EQUAL -1 OR
+   SHAOLIN_SAME_END LESS SHAOLIN_SAME_BEGIN)
+    message(FATAL_ERROR "Cannot port pinned SSE render state comparison to ARM64")
+endif()
+string(SUBSTRING "${SHAOLIN_RENDER_THREAD}" 0 ${SHAOLIN_SAME_BEGIN} SHAOLIN_PREFIX)
+string(SUBSTRING "${SHAOLIN_RENDER_THREAD}" ${SHAOLIN_SAME_END} -1 SHAOLIN_SUFFIX)
+set(SHAOLIN_RENDER_THREAD
+  "${SHAOLIN_PREFIX}bool Same(const uint8_t* a, const uint8_t* b, size_t n) { return std::memcmp(a,b,n)==0; }\\n\\n${SHAOLIN_SUFFIX}")
+set(SHAOLIN_ARM64_RENDER_THREAD "${CMAKE_CURRENT_BINARY_DIR}/shaolin_render_thread_arm64.cpp")
+file(WRITE "${SHAOLIN_ARM64_RENDER_THREAD}" "${SHAOLIN_RENDER_THREAD}")
+
 find_library(shaolin_gles3 GLESv3 REQUIRED)
 find_library(shaolin_egl EGL REQUIRED)
 
@@ -35,7 +54,7 @@ target_sources(main PRIVATE
     "${SHAOLIN_ADAPTED}/d3d8.cpp"
     "${SHAOLIN_ADAPTED}/vertex.cpp"
     "${SHAOLIN_ADAPTED}/shaders.cpp"
-    "${SHAOLIN_ADAPTED}/render_thread.cpp"
+    "${SHAOLIN_ARM64_RENDER_THREAD}"
     "${XBE_SDK}/runtime/gpu/texture.cpp"
     "${XBE_SDK}/runtime/xdk/xapi.cpp"
     "${XBE_SDK}/runtime/core/input.cpp"
