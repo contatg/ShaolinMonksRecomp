@@ -10,7 +10,7 @@ option(SHAOLIN_ENABLE_GUEST_OBJECTS
     "Compile locally generated Shaolin game code into ARM64 objects" OFF)
 if(SHAOLIN_ENABLE_GUEST_OBJECTS)
     get_filename_component(SHAOLIN_REPO_ROOT
-        "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
+        "${CMAKE_CURRENT_LIST_DIR}/../../../../.." ABSOLUTE)
     set(SHAOLIN_PRIVATE_GEN "${SHAOLIN_REPO_ROOT}/android/generated/shaolin")
     set(SHAOLIN_GENERATED_SOURCES
         "${SHAOLIN_PRIVATE_GEN}/x86_func_mapping.cpp")
