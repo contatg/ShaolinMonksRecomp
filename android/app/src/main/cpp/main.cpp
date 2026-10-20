@@ -437,6 +437,25 @@ int main(int argc, char** argv) {
         SDL_Quit();
         return 2;
     }
+    // Start Xbox CPU boot independently of graphics. If a device's Vulkan
+    // swapchain fails, the real boot still runs and produces useful logs.
+#ifdef SHAOLIN_REAL_GAME_BOOT
+if (xbox_image_ready) {
+    shaolin_android::StartXboxLogcat();
+    const char* pref = SDL_GetPrefPath("ShaolinMobiu", "Xbox");
+    const std::string data_dir = pref && *pref ? std::string(pref) : std::string("/data/local/tmp");
+    SMLOG("GAME BOOT: invoking REAL kernel::Boot with original Xbox XBE and mounted D: ISO");
+    // Guest threads execute independently from SDL's window thread.
+    // kernel::Boot returns after scheduling the first guest CPU entry.
+    if (!kernel::Boot(std::move(verified_xbe), "default.xbe",
+                      data_dir + "/disc", data_dir + "/hdd")) {
+        SMERR("GAME BOOT FAILED: kernel::Boot returned false; inspect ShaolinXboxKernel");
+    } else {
+        SMLOG("GAME BOOT STARTED: Xbox guest entry thread launched; inspect ShaolinXboxKernel");
+    }
+}
+#endif
+
     int result = 0;
     {
         Renderer renderer;
@@ -444,23 +463,8 @@ int main(int argc, char** argv) {
             SMERR("Vulkan renderer startup failed. Original Shaolin code NOT running.");
             result = 3;
         } else {
-#ifdef SHAOLIN_REAL_GAME_BOOT
-            if (xbox_image_ready) {
-                shaolin_android::StartXboxLogcat();
-                const char* pref = SDL_GetPrefPath("ShaolinMobiu", "Xbox");
-                const std::string data_dir = pref && *pref ? std::string(pref) : std::string("/data/local/tmp");
-                SMLOG("GAME BOOT: invoking REAL kernel::Boot with original Xbox XBE and mounted D: ISO");
-                // Guest threads execute independently from SDL's window thread.
-                // kernel::Boot returns after scheduling the first guest CPU entry.
-                if (!kernel::Boot(std::move(verified_xbe), "default.xbe",
-                                  data_dir + "/disc", data_dir + "/hdd")) {
-                    SMERR("GAME BOOT FAILED: kernel::Boot returned false; inspect ShaolinXboxKernel");
-                } else {
-                    SMLOG("GAME BOOT STARTED: Xbox guest entry thread launched; inspect ShaolinXboxKernel");
-                }
-            }
-#else
-            SMLOG("Launcher renderer initialized; game thread not included in this build.");
+#ifndef SHAOLIN_REAL_GAME_BOOT
+            SMLOG("Launcher renderer initialized; no Xbox code in public APK.");
 #endif
             const Uint64 started = SDL_GetTicks();
             bool alive = true;
