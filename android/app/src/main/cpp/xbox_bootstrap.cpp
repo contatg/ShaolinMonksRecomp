@@ -209,6 +209,49 @@ bool ValidateXbeBounds(const std::vector<uint8_t>& bytes) {
 
 } // namespace
 
+// Private/native game path. Pass the original verified bytes to the real
+// Xbox kernel::Boot; Boot alone is responsible for mem::Init, kernel exports,
+// import thunks and creating the first guest thread. The ISO remains mounted.
+bool LoadVerifiedXboxForBoot(int fd, std::vector<uint8_t>& xbe) {
+    xbe.clear();
+    if (fd < 0) {
+        XB_ERR("GAME BOOT: no ISO selected");
+        return false;
+    }
+    std::unique_ptr<kernel::Disc> disc;
+    if (!ReadGameImage(fd, xbe, disc)) {
+        XB_ERR("GAME BOOT: cannot read XDVDFS default.xbe");
+        return false;
+    }
+    const std::string hash = Sha256(xbe);
+    if (hash != kExpectedSha256) {
+        XB_ERR("GAME BOOT: XBE SHA256 mismatch: %s", hash.c_str());
+        xbe.clear();
+        return false;
+    }
+    if (!ValidateXbeBounds(xbe)) {
+        XB_ERR("GAME BOOT: XBE image bounds invalid");
+        xbe.clear();
+        return false;
+    }
+    if (!disc) {
+        XB_ERR("GAME BOOT: standalone XBE cannot mount game assets. Select full ISO.");
+        xbe.clear();
+        return false;
+    }
+    kernel::MountDisc(std::move(disc));
+    const auto* mounted = kernel::MountedDisc();
+    const auto* entry = mounted ? mounted->Find("default.xbe") : nullptr;
+    if (!entry || entry->dir) {
+        XB_ERR("GAME BOOT: mounted ISO missing default.xbe");
+        xbe.clear();
+        return false;
+    }
+    XB_INFO("GAME BOOT: ISO verified and mounted at D:, XBE=%zu bytes, kernel owns guest startup",
+            xbe.size());
+    return true;
+}
+
 bool PrepareXboxImage(int fd, uint32_t* loaded_entry,
                       uint32_t* loaded_kernel_thunk) {
     if (loaded_entry) *loaded_entry = 0;
