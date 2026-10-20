@@ -30,8 +30,14 @@ android {
         ndk { abiFilters "arm64-v8a" }
         externalNativeBuild {
             cmake {
+                // Private local Android build: compile/link the user's own
+                // translated Xbox code inside libmain.so only when explicitly
+                // requested. CI/default APK stays launcher-only.
                 arguments "-DSHAOLIN_ENABLE_GUEST_OBJECTS=" +
-                    (project.findProperty("shaolinGuestObjects") == "true" ? "ON" : "OFF")
+                    ((project.findProperty("shaolinNativeGame") == "true" ||
+                      project.findProperty("shaolinGuestObjects") == "true") ? "ON" : "OFF"),
+                    "-DSHAOLIN_EMBED_NATIVE_GUEST=" +
+                    (project.findProperty("shaolinNativeGame") == "true" ? "ON" : "OFF")
             }
         }
     }
