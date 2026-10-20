@@ -39,6 +39,7 @@ public final class LauncherActivity extends Activity {
     public static final String KEY_GAME_KIND = "game_kind";
     public static final String KEY_RESOLUTION = "render_percent";
     public static final String KEY_FPS = "fps_cap";
+    public static final String KEY_RENDERER = "graphics_backend";
 
     private static final int REQUEST_GAME = 1201;
     private static final int REQUEST_FOLDER = 1202;
@@ -57,6 +58,7 @@ public final class LauncherActivity extends Activity {
     private boolean nativeGameBootBuild;
     private LinearLayout resOptions;
     private LinearLayout fpsOptions;
+    private LinearLayout rendererOptions;
 
     private int dp(float value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
@@ -152,7 +154,7 @@ public final class LauncherActivity extends Activity {
         LinearLayout identity = vertical();
         identity.setPadding(dp(12), 0, 0, 0);
         identity.addView(text("SHAOLIN MOBIU", 16, WHITE, true));
-        TextView sub = text("ANDROID • ARM64 • VULKAN", 10, MUTED, true);
+        TextView sub = text("ANDROID • ARM64 • VULKAN / OPENGL", 10, MUTED, true);
         sub.setLetterSpacing(0.11f);
         identity.addView(sub, verticalParams(4, 0));
         header.addView(identity, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -231,13 +233,18 @@ public final class LauncherActivity extends Activity {
         LinearLayout settings = vertical();
         settings.setBackground(outlined(PANEL, BORDER, 20));
         settings.setPadding(dp(17), dp(19), dp(17), dp(19));
-        settings.addView(text("Escala de resolução", 16, WHITE, true));
+        settings.addView(text("Renderizador do jogo", 16, WHITE, true));
+        settings.addView(text("Selecione Vulkan ou OpenGL ES 3.0 antes de jogar", 12, MUTED, false),
+            verticalParams(5, 11));
+        rendererOptions = new LinearLayout(this);
+        settings.addView(rendererOptions);
+        settings.addView(text("Escala de resolução", 16, WHITE, true), verticalParams(20, 0));
         settings.addView(text("Preferência salva para o port do jogo", 12, MUTED, false),
             verticalParams(5, 11));
         resOptions = new LinearLayout(this);
         settings.addView(resOptions);
         settings.addView(text("Limite de FPS", 16, WHITE, true), verticalParams(20, 0));
-        settings.addView(text("Aplicado ao teste Vulkan", 12, MUTED, false),
+        settings.addView(text("Limite de quadros do renderizador", 12, MUTED, false),
             verticalParams(5, 11));
         fpsOptions = new LinearLayout(this);
         settings.addView(fpsOptions);
@@ -286,6 +293,27 @@ public final class LauncherActivity extends Activity {
     }
 
     private void refreshOptions() {
+        String backend = prefs.getString(KEY_RENDERER, "vulkan");
+        rendererOptions.removeAllViews();
+        final String[] names = {"Vulkan", "OpenGL ES 3"};
+        final String[] values = {"vulkan", "opengl"};
+        for (int i = 0; i < names.length; i++) {
+            final String choice = values[i];
+            boolean selected = backend.equals(choice);
+            TextView chip = text(names[i], 14, selected ? WHITE : MUTED, true);
+            chip.setGravity(Gravity.CENTER);
+            chip.setMinHeight(dp(46));
+            chip.setBackground(selected
+                ? outlined(Color.rgb(110, 37, 49), ACCENT, 13)
+                : outlined(Color.rgb(29, 27, 34), BORDER, 13));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(46), 1f);
+            if (i > 0) params.leftMargin = dp(8);
+            rendererOptions.addView(chip, params);
+            chip.setOnClickListener(view -> {
+                prefs.edit().putString(KEY_RENDERER, choice).apply();
+                refreshOptions();
+            });
+        }
         int scale = prefs.getInt(KEY_RESOLUTION, 75);
         int fps = prefs.getInt(KEY_FPS, 60);
         renderChoices(resOptions, new int[]{50, 75, 100}, scale, "%", value -> {
