@@ -59,7 +59,7 @@ target_sources(main PRIVATE
     "${SHAOLIN_ARM64_RENDER_THREAD}"
     "${XBE_SDK}/runtime/gpu/texture.cpp"
     "${XBE_SDK}/runtime/xdk/xapi.cpp"
-    "${XBE_SDK}/runtime/core/input.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaolin_android_input.cpp"
     "${SHAOLIN_REPO_ROOT}/src/raster_compat.cpp"
     "${SHAOLIN_VK}/vk_api.cpp"
     "${SHAOLIN_VK}/vk_shader.cpp"
