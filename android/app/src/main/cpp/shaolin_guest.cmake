@@ -207,7 +207,8 @@ if(SHAOLIN_ENABLE_GUEST_OBJECTS)
             $<TARGET_OBJECTS:shaolin_xbox_boot_arm64>
             $<TARGET_OBJECTS:shaolin_android_boot_host_arm64>
             "${XBE_SDK}/runtime/kernel/ordinals.cpp"
-            "${CMAKE_CURRENT_SOURCE_DIR}/android_log_redirect.cpp")
+            "${CMAKE_CURRENT_SOURCE_DIR}/android_log_redirect.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/shaolin_game_trace.cpp")
         target_include_directories(main PRIVATE
             "${SHAOLIN_PRIVATE_GEN}"
             "${SHAOLIN_REPO_ROOT}/src")
