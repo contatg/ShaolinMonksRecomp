@@ -89,6 +89,41 @@ if(SHAOLIN_ENABLE_GUEST_OBJECTS)
         "${XBE_SDK}/runtime" "${SHAOLIN_PRIVATE_GEN}")
     set_target_properties(shaolin_kernel_symbols_arm64 PROPERTIES
         POSITION_INDEPENDENT_CODE ON)
+    # Compile the ACTUAL PC Krypt routine engine, not a no-op replacement.
+    # The Windows host recompiler's pinned FetchContent already has Lua 5.4.9.
+    # This remains an opt-in, local-only build until a full Android guest boot
+    # with game files, XDK exports, and renderer is implemented.
+    set(SHAOLIN_LOCAL_LUA "${SHAOLIN_REPO_ROOT}/build/release/_deps/shaolin_lua-src/src")
+    if(NOT EXISTS "${SHAOLIN_LOCAL_LUA}/lua.h"
+       OR NOT EXISTS "${SHAOLIN_LOCAL_LUA}/lapi.c")
+        message(FATAL_ERROR
+            "Pinned Lua sources missing from ${SHAOLIN_LOCAL_LUA}. "
+            "Run android/Preparar-XBE-Android.ps1 first (which configures the PC runtime).")
+    endif()
+    file(GLOB SHAOLIN_LUA_C_SOURCES CONFIGURE_DEPENDS
+        "${SHAOLIN_LOCAL_LUA}/*.c")
+    set(SHAOLIN_LUA_RUNTIME_SOURCES "")
+    foreach(lua_source IN LISTS SHAOLIN_LUA_C_SOURCES)
+        get_filename_component(lua_name "${lua_source}" NAME)
+        if(NOT lua_name STREQUAL "lua.c" AND NOT lua_name STREQUAL "luac.c")
+            list(APPEND SHAOLIN_LUA_RUNTIME_SOURCES "${lua_source}")
+        endif()
+    endforeach()
+    if(NOT SHAOLIN_LUA_RUNTIME_SOURCES)
+        message(FATAL_ERROR "No Lua 5.4.9 runtime C sources found for Android.")
+    endif()
+    add_library(shaolin_krypt_routines_arm64 OBJECT EXCLUDE_FROM_ALL
+        "${SHAOLIN_REPO_ROOT}/src/mods/routines.cpp"
+        "${SHAOLIN_REPO_ROOT}/src/mods/runtime.cpp"
+        "${SHAOLIN_REPO_ROOT}/src/mods/game_targets.cpp"
+        ${SHAOLIN_LUA_RUNTIME_SOURCES})
+    target_include_directories(shaolin_krypt_routines_arm64 PRIVATE
+        "${SHAOLIN_LOCAL_LUA}" "${SHAOLIN_REPO_ROOT}/src"
+        "${XBE_SDK}/runtime" "${SHAOLIN_PRIVATE_GEN}")
+    target_compile_options(shaolin_krypt_routines_arm64 PRIVATE
+        -O1 -fno-strict-aliasing)
+    set_target_properties(shaolin_krypt_routines_arm64 PROPERTIES
+        POSITION_INDEPENDENT_CODE ON)
     # Both object targets are only compiled locally, not packaged into a
     # playable APK before full kernel/XDK and graphics integration.
     message(STATUS
