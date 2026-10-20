@@ -7,6 +7,9 @@
 // compiled (to SPIR-V with glslang) and the same pipeline keys pick the
 // pipelines. Only the API underneath differs; the Windows build keeps D3D12.
 #include "linux/vk/vk_api.h"
+#ifdef __ANDROID__
+#include "shaolin_game_trace.h"
+#endif
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
@@ -872,6 +875,9 @@ VulkanBackend::~VulkanBackend() {
 }
 
 bool VulkanBackend::Init(uint32_t width, uint32_t height) {
+#ifdef __ANDROID__
+    shaolin_android::Trace("VULKAN_BACKEND_INIT_BEGIN %ux%u", width, height);
+#endif
     guest_w_ = width;
     guest_h_ = height;
     if (!vkapi::LoadGlobal() || !CreateInstance() || !PickDevice() || !CreateDevice()) return false;
@@ -883,6 +889,10 @@ bool VulkanBackend::Init(uint32_t width, uint32_t height) {
     scale_ = app::RenderScale(guest_h_);
     Begin();
     LOGI("vulkan: %ux%u guest, %ux%u window, render scale %.3f", width, height, bb_w_, bb_h_, scale_);
+#ifdef __ANDROID__
+    shaolin_android::Trace("VULKAN_BACKEND_INIT_OK guest=%ux%u window=%ux%u scale=%.3f",
+                           width, height, bb_w_, bb_h_, scale_);
+#endif
     return true;
 }
 
@@ -3367,6 +3377,9 @@ void LogPerf() {
 }
 
 void VulkanBackend::Present(const Surface& front) {
+#ifdef __ANDROID__
+    shaolin_android::TracePresent("Vulkan");
+#endif
     PerfScope perf_present{g_perf.present};
     if (g_capture.exchange(false)) LOG_FIRST(1, "capture: frame captures need the Direct3D 12 renderer");
     ResizeSwap();
