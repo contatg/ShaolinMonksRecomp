@@ -195,20 +195,27 @@ if(SHAOLIN_ENABLE_GUEST_OBJECTS)
         # In contrast to the independent link probe, all guest/CPU/Krypt
         # code now lives INSIDE the native SDL main library. Share one real
         # Xbox guest memory manager and logger from the original preboot.
+        # This is the ACTUAL Xbox boot implementation rather than the old
+        # address verification preview. Boot owns kernel::g_base and starts
+        # the recompiled entry on a guest thread.
+        # Do NOT link shaolin_kernel_bindings.cpp: it defined a second g_base.
         target_sources(main PRIVATE
             $<TARGET_OBJECTS:shaolin_guest_arm64>
             $<TARGET_OBJECTS:shaolin_dispatch_arm64>
-            $<TARGET_OBJECTS:shaolin_kernel_symbols_arm64>
             $<TARGET_OBJECTS:shaolin_krypt_routines_arm64>
-            "${CMAKE_CURRENT_SOURCE_DIR}/xbox_game_runtime.cpp")
+            $<TARGET_OBJECTS:shaolin_xbox_kernel_arm64>
+            $<TARGET_OBJECTS:shaolin_xbox_boot_arm64>
+            $<TARGET_OBJECTS:shaolin_android_boot_host_arm64>
+            "${XBE_SDK}/runtime/kernel/ordinals.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/android_log_redirect.cpp")
         target_include_directories(main PRIVATE
             "${SHAOLIN_PRIVATE_GEN}"
             "${SHAOLIN_REPO_ROOT}/src")
-        target_compile_definitions(main PRIVATE SHAOLIN_NATIVE_GUEST=1)
+        target_compile_definitions(main PRIVATE SHAOLIN_NATIVE_GUEST=1 SHAOLIN_REAL_GAME_BOOT=1)
         target_link_libraries(main PRIVATE m)
         target_link_options(main PRIVATE "-Wl,--no-undefined")
         message(STATUS
-            "Private game APK: 129 Xbox guest objects + CPU dispatcher + Krypt Lua embedded into libmain.so")
+            "Private game APK: REAL Xbox kernel::Boot + 129 guest objects + native Xbox thread enabled")
     endif()
 
     # Both object targets are only compiled locally, not packaged into a
