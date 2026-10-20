@@ -54,13 +54,24 @@ $kernelSymbols=@(Get-ChildItem $build -Filter '*.o' -Recurse -File |
 if($kernelSymbols.Count -ne 2){
   throw "Expected two Xbox kernel symbol objects, found $($kernelSymbols.Count)."
 }
+# Build the genuine Lua-backed Krypt runtime; only these new source files
+# need compiling. Its CurrentRoutines and InvokeRouted references are real.
+Write-Host 'Building original PC Krypt Lua routine engine for Android ARM64...'
+& cmake --build $build --target shaolin_krypt_routines_arm64 --parallel 2
+if($LASTEXITCODE -ne 0){throw "Krypt routine engine ARM64 compile failed ($LASTEXITCODE)"}
+$kryptObjects=@(Get-ChildItem $build -Filter '*.o' -Recurse -File |
+  Where-Object {$_.FullName.Contains('shaolin_krypt_routines_arm64.dir')})
+if($kryptObjects.Count -lt 30){
+  throw "Expected Lua runtime + three mod bridge objects; found $($kryptObjects.Count)."
+}
 $inputs=@($guest | ForEach-Object {$_.FullName}) + @($dispatch[0].FullName) + $hostObjects +
-  @($kernelSymbols | ForEach-Object {$_.FullName})
+  @($kernelSymbols | ForEach-Object {$_.FullName}) +
+  @($kryptObjects | ForEach-Object {$_.FullName})
 # Passing inputs via response-file prevents Windows' 32KiB cmd-line limit.
 $responseFile=Join-Path $out 'link-inputs.rsp'
 $lines=@('-r','-o',('"'+$combined+'"')) + @($inputs|ForEach-Object{'"'+$_+'"'})
 [System.IO.File]::WriteAllLines($responseFile,$lines,[System.Text.UTF8Encoding]::new($false))
-Write-Host "Linking $($guest.Count) guest objects + dispatcher + memory/log + Xbox ordinals/base (relocatable ARM64)..."
+Write-Host "Linking $($guest.Count) guest objects + dispatcher + memory/log + Xbox symbols + Krypt Lua (relocatable ARM64)..."
 & $ld ('@'+$responseFile)
 if($LASTEXITCODE -ne 0){throw "ARM64 ld.lld -r failed (exit $LASTEXITCODE)"}
 $defined=Join-Path $out 'shaolin-linked-defined.txt'
@@ -76,9 +87,18 @@ foreach($name in $names){
     Write-Host "RESOLVED $name" -ForegroundColor Green
   } else { Write-Warning "Dispatcher function not found in combined object: $name" }
 }
+# Verify the two formerly missing guest mod entry points are REALLY defined.
+$modSymbols=@('shaolin::mods::CurrentRoutines', 'shaolin::mods::InvokeRouted(')
+foreach($symbol in $modSymbols) {
+  if(@($definedText | Where-Object {$_.Contains($symbol)}).Count -gt 0) {
+    Write-Host "RESOLVED $symbol" -ForegroundColor Green
+  } else {
+    throw "Original Krypt runtime did not define $symbol in combined ARM64 object."
+  }
+}
 $remaining=@(Get-Content $missing | Sort-Object -Unique)
 Write-Host "Linked ARM64 object: $combined"
-Write-Host "Still undefined symbols: $($remaining.Count)"`nWrite-Host 'Kernel memory/log and ordinal lookup/base compiled; actual boot/XDK and Krypt routine engine are still missing.'
+Write-Host "Still undefined symbols: $($remaining.Count)"`nWrite-Host 'Kernel memory/log, ordinal names, and actual Krypt Lua routine engine included; Android game boot/XDK remain.'
 Write-Host "Report: $missing"
 Write-Host "First unresolved symbols:"
 $remaining | Select-Object -First 40
