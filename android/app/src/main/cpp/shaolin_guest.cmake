@@ -80,6 +80,15 @@ if(SHAOLIN_ENABLE_GUEST_OBJECTS)
         -O1 -fno-strict-aliasing -fsigned-char)
     set_target_properties(shaolin_dispatch_arm64 PROPERTIES
         POSITION_INDEPENDENT_CODE ON)
+    # Actual public Xbox kernel ordinal names and a guarded guest memory-base
+    # binding. Keep this out of libmain.so until boot integration is ready.
+    add_library(shaolin_kernel_symbols_arm64 OBJECT EXCLUDE_FROM_ALL
+        "${XBE_SDK}/runtime/kernel/ordinals.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/shaolin_kernel_bindings.cpp")
+    target_include_directories(shaolin_kernel_symbols_arm64 PRIVATE
+        "${XBE_SDK}/runtime" "${SHAOLIN_PRIVATE_GEN}")
+    set_target_properties(shaolin_kernel_symbols_arm64 PROPERTIES
+        POSITION_INDEPENDENT_CODE ON)
     # Both object targets are only compiled locally, not packaged into a
     # playable APK before full kernel/XDK and graphics integration.
     message(STATUS
