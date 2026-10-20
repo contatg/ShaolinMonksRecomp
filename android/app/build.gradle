@@ -62,3 +62,8 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
+dependencies {
+    // XZ for Java: decode PC-compatible Krypt .tar.xz packages inside app sandbox.
+    implementation "org.tukaani:xz:1.12"
+}
