@@ -15,7 +15,7 @@ Write-Host 'Compiling REAL Xbox 5849 kernel services: objects, threads, RTL, xbo
 if($LASTEXITCODE -ne 0){throw "Xbox kernel ARM64 source build failed ($LASTEXITCODE). Send the FIRST compiler error."}
 $objs=@(Get-ChildItem $build -Recurse -File -Filter '*.o' |
   Where-Object {$_.FullName.Contains('shaolin_xbox_kernel_arm64.dir')})
-if($objs.Count -ne 4){throw "Xbox kernel build returned success but found $($objs.Count)/4 objects."}
+if($objs.Count -ne 5){throw "Xbox kernel build returned success but found $($objs.Count)/5 objects."}
 $dir=Join-Path $root 'android-local\kernel'
 New-Item -ItemType Directory -Force $dir|Out-Null
 $nm=Join-Path $env:LOCALAPPDATA 'Android\Sdk\ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-nm.exe'
@@ -24,6 +24,6 @@ $report=Join-Path $dir 'xbox-kernel-exported-functions.txt'
 $lines=@()
 foreach($obj in $objs){$lines+=& $nm --defined-only --demangle $obj.FullName}
 $lines|Set-Content -Encoding UTF8 -LiteralPath $report
-Write-Host 'SUCCESS: four genuine ARM64 Xbox kernel service source files compiled.' -ForegroundColor Green
+Write-Host 'SUCCESS: five genuine ARM64 Xbox kernel service source files compiled.' -ForegroundColor Green
 Write-Host "Symbols: $report"
 Write-Host 'NEXT: link kernel registration and file system into APK, then port Xbox graphics/audio.'
