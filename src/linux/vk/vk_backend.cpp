@@ -1184,17 +1184,25 @@ bool VulkanBackend::CreateSwapchain() {
     ci.presentMode = mode;
     ci.clipped = VK_TRUE;
     ci.oldSwapchain = old;
-    VkResult r = vk.vkCreateSwapchainKHR(dev_, &ci, nullptr, &swap_);
+    // Never destroy the existing surface images/semaphores until a replacement
+    // swapchain was created successfully. Android can transiently fail during
+    // rotation, background/foreground, or SurfaceView recreation.
+    VkSwapchainKHR replacement = VK_NULL_HANDLE;
+    VkResult r = vk.vkCreateSwapchainKHR(dev_, &ci, nullptr, &replacement);
+    if (r != VK_SUCCESS || !replacement) {
+        LOGE("vulkan: no swap chain: %s", vkapi::ResultName(r));
+#ifdef __ANDROID__
+        shaolin_android::Trace("VULKAN_SWAPCHAIN_RECREATE_FAIL result=%s old_preserved=%d",
+                               vkapi::ResultName(r), old ? 1 : 0);
+#endif
+        return false;
+    }
+    swap_ = replacement;
     if (old) {
         swap_images_.clear();
         for (VkSemaphore s : swap_done_) vk.vkDestroySemaphore(dev_, s, nullptr);
         swap_done_.clear();
         vk.vkDestroySwapchainKHR(dev_, old, nullptr);
-    }
-    if (r != VK_SUCCESS) {
-        swap_ = VK_NULL_HANDLE;
-        LOGE("vulkan: no swap chain: %s", vkapi::ResultName(r));
-        return false;
     }
     swap_format_ = format.format;
     bb_w_ = extent.width;
