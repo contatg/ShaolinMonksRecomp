@@ -45,12 +45,22 @@ foreach($file in @('memory.cpp.o','log.cpp.o')){
   }
   $hostObjects += $match[0].FullName
 }
-$inputs=@($guest | ForEach-Object {$_.FullName}) + @($dispatch[0].FullName) + $hostObjects
+# Compile only the real Xbox symbol glue (two translation units).
+Write-Host 'Building genuine Xbox ordinal lookup and guest-memory binding...'
+& cmake --build $build --target shaolin_kernel_symbols_arm64 --parallel 2
+if($LASTEXITCODE -ne 0){throw "Kernel symbol compilation failed ($LASTEXITCODE)"}
+$kernelSymbols=@(Get-ChildItem $build -Filter '*.o' -Recurse -File |
+  Where-Object {$_.FullName.Contains('shaolin_kernel_symbols_arm64.dir')})
+if($kernelSymbols.Count -ne 2){
+  throw "Expected two Xbox kernel symbol objects, found $($kernelSymbols.Count)."
+}
+$inputs=@($guest | ForEach-Object {$_.FullName}) + @($dispatch[0].FullName) + $hostObjects +
+  @($kernelSymbols | ForEach-Object {$_.FullName})
 # Passing inputs via response-file prevents Windows' 32KiB cmd-line limit.
 $responseFile=Join-Path $out 'link-inputs.rsp'
 $lines=@('-r','-o',('"'+$combined+'"')) + @($inputs|ForEach-Object{'"'+$_+'"'})
 [System.IO.File]::WriteAllLines($responseFile,$lines,[System.Text.UTF8Encoding]::new($false))
-Write-Host "Linking $($guest.Count) guest objects + dispatcher + real kernel memory/log (relocatable ARM64)..."
+Write-Host "Linking $($guest.Count) guest objects + dispatcher + memory/log + Xbox ordinals/base (relocatable ARM64)..."
 & $ld ('@'+$responseFile)
 if($LASTEXITCODE -ne 0){throw "ARM64 ld.lld -r failed (exit $LASTEXITCODE)"}
 $defined=Join-Path $out 'shaolin-linked-defined.txt'
@@ -68,7 +78,7 @@ foreach($name in $names){
 }
 $remaining=@(Get-Content $missing | Sort-Object -Unique)
 Write-Host "Linked ARM64 object: $combined"
-Write-Host "Still undefined symbols: $($remaining.Count)"`nWrite-Host 'Real kernel memory and log object files included; guest initialization/XDK still pending.'
+Write-Host "Still undefined symbols: $($remaining.Count)"`nWrite-Host 'Kernel memory/log and ordinal lookup/base compiled; actual boot/XDK and Krypt routine engine are still missing.'
 Write-Host "Report: $missing"
 Write-Host "First unresolved symbols:"
 $remaining | Select-Object -First 40
