@@ -913,9 +913,19 @@ bool VulkanBackend::Init(uint32_t width, uint32_t height) {
 #endif
         return false;
     }
+#ifdef __ANDROID__
+    shaolin_android::Trace("VULKAN_INIT_STAGE pipeline-cache begin");
+#endif
     LoadPipelineCache();
+#ifdef __ANDROID__
+    shaolin_android::Trace("VULKAN_INIT_STAGE pipeline-cache done");
+    shaolin_android::Trace("VULKAN_INIT_STAGE native-ui skipped (Android Java launcher)");
+#endif
     InitUi();
     scale_ = app::RenderScale(guest_h_);
+#ifdef __ANDROID__
+    shaolin_android::Trace("VULKAN_INIT_STAGE begin-commands");
+#endif
     Begin();
     LOGI("vulkan: %ux%u guest, %ux%u window, render scale %.3f", width, height, bb_w_, bb_h_, scale_);
 #ifdef __ANDROID__
@@ -3007,9 +3017,19 @@ void VulkanBackend::DeliverReports() {
 void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) {
     PerfScope perf_draw{g_perf.draw};
     g_perf.draws++;
+#ifdef __ANDROID__
+    const bool trace_draw = g_perf.draws <= 4 || g_perf.draws % 2048 == 0;
+    if (trace_draw)
+        shaolin_android::Trace("VULKAN_DRAW_BEGIN count=%llu prim=%u vertices=%u",
+                              static_cast<unsigned long long>(g_perf.draws), prim, count);
+#endif
     if (DepthCopy(s)) return;
     Assembled& a = asm_;
     if (!AssembleDraw(s, prim, start, count, indices, a)) return;
+#ifdef __ANDROID__
+    if (trace_draw) shaolin_android::Trace("VULKAN_DRAW_ASSEMBLED regs=%u verts=%u",
+                                           unsigned(a.regs), a.vertex_count);
+#endif
     // past the ring every upload is a buffer of its own: seconds lost on a frame that draws a whole level once
     if (CurrentFrame().used > kUploadSize - kUploadReserve) Submit(true);
     if (!BindTargets(s)) return;
@@ -3039,8 +3059,14 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         atlas |= !stages.rt[i] && stages.info[i].kind == kTex2D;
     }
     k.atlas_guard = sh.quad && a.topology == Topology::Triangles && atlas && !target_texture;
+#ifdef __ANDROID__
+    if (trace_draw) shaolin_android::Trace("VULKAN_DRAW_PIPELINE_BEGIN");
+#endif
     VkPipeline pso = EnsurePipeline(k, sh.vs_code, sh.ps_code);
     if (!pso) return;
+#ifdef __ANDROID__
+    if (trace_draw) shaolin_android::Trace("VULKAN_DRAW_PIPELINE_OK");
+#endif
 
     // constants
     GuestExtent size;
@@ -3062,6 +3088,10 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     }
     DrawGeometry(a);
     EndCountedDraw(query);
+#ifdef __ANDROID__
+    if (trace_draw) shaolin_android::Trace("VULKAN_DRAW_SUBMITTED draw=%llu",
+        static_cast<unsigned long long>(g_perf.draws));
+#endif
 }
 
 // ---- clears and copies ----
@@ -3455,6 +3485,12 @@ void LogPerf() {
 
 void VulkanBackend::Present(const Surface& front) {
     PerfScope perf_present{g_perf.present};
+#ifdef __ANDROID__
+    static uint64_t frame_attempts = 0;
+    if (++frame_attempts <= 5 || frame_attempts % 120 == 0)
+        shaolin_android::Trace("VULKAN_PRESENT_BEGIN attempt=%llu",
+                              static_cast<unsigned long long>(frame_attempts));
+#endif
     if (g_capture.exchange(false)) LOG_FIRST(1, "capture: frame captures need the Direct3D 12 renderer");
     ResizeSwap();
     Target* t = EnsureTarget(front, false);
