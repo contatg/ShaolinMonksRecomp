@@ -2,6 +2,7 @@
 // This is a visible renderer test, NOT an executable Xbox game port.
 // No proprietary game data or generated Xbox code is linked in this build.
 #include "xbox_bootstrap.h"
+#include <SDL3/SDL.h>
 #ifdef SHAOLIN_REAL_GAME_BOOT
 #include <kernel/kernel.h>
 #include <core/input.h>
