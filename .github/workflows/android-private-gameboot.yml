@@ -19,13 +19,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      PRIVATE_REPO: ${{ secrets.SHAOLIN_PRIVATE_SOURCES_REPO }}
-      PRIVATE_TOKEN: ${{ secrets.SHAOLIN_PRIVATE_SOURCES_TOKEN }}
-      ARCHIVE_PASSWORD: ${{ secrets.SHAOLIN_APK_ARCHIVE_PASSWORD }}
       GRADLE_OPTS: -Dorg.gradle.daemon=false -Dfile.encoding=UTF-8
     steps:
       - name: Check private build prerequisites before installing large toolchains
         shell: bash
+        env:
+          PRIVATE_REPO: ${{ secrets.SHAOLIN_PRIVATE_SOURCES_REPO }}
+          PRIVATE_TOKEN: ${{ secrets.SHAOLIN_PRIVATE_SOURCES_TOKEN }}
+          ARCHIVE_PASSWORD: ${{ secrets.SHAOLIN_APK_ARCHIVE_PASSWORD }}
         run: |
           set -euo pipefail
           if [[ -z "$PRIVATE_REPO" || -z "$PRIVATE_TOKEN" || -z "$ARCHIVE_PASSWORD" ]]; then
@@ -137,6 +138,8 @@ jobs:
 
       - name: Encrypt full game APK before artifact upload
         shell: bash
+        env:
+          ARCHIVE_PASSWORD: ${{ secrets.SHAOLIN_APK_ARCHIVE_PASSWORD }}
         run: |
           set -euo pipefail
           sudo apt-get update -qq
