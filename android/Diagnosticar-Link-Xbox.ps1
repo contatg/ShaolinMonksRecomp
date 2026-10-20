@@ -13,8 +13,8 @@ if(!$build){throw 'Nao encontrei build.ninja da arquitetura arm64-v8a.'}
 $objects=@(Get-ChildItem $build.DirectoryName -Filter '*.o' -File -Recurse |
     Where-Object {$_.FullName -like '*shaolin_guest_arm64*'})
 if($objects.Count -lt 129){throw "Esperado >=129 objetos ARM64, encontrados: $($objects.Count)."}
-$home=if($env:ANDROID_HOME){$env:ANDROID_HOME}else{"$env:LOCALAPPDATA\Android\Sdk"}
-$llvm=Join-Path $home 'ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-nm.exe'
+$androidSdkHome=if($env:ANDROID_HOME){$env:ANDROID_HOME}else{"$env:LOCALAPPDATA\Android\Sdk"}
+$llvm=Join-Path $androidSdkHome 'ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-nm.exe'
 if(!(Test-Path $llvm)){throw "llvm-nm nao encontrado: $llvm"}
 $outDir=Join-Path $root 'android-local\diagnostico'
 New-Item -ItemType Directory -Force -Path $outDir|Out-Null
