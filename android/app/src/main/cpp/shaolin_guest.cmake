@@ -138,7 +138,8 @@ if(SHAOLIN_ENABLE_GUEST_OBJECTS)
         "${XBE_SDK}/runtime/kernel/objects.cpp"
         "${XBE_SDK}/runtime/kernel/threads.cpp"
         "${XBE_SDK}/runtime/kernel/rtl.cpp"
-        "${XBE_SDK}/runtime/kernel/xboxkrnl.cpp")
+        "${XBE_SDK}/runtime/kernel/xboxkrnl.cpp"
+        "${XBE_SDK}/runtime/kernel/crypto.cpp")
     target_include_directories(shaolin_xbox_kernel_arm64 PRIVATE
         "${XBE_SDK}/runtime" "${SHAOLIN_PRIVATE_GEN}"
         "${SHAOLIN_REPO_ROOT}/src")
