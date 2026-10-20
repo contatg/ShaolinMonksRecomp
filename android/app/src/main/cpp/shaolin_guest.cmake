@@ -212,6 +212,8 @@ if(SHAOLIN_ENABLE_GUEST_OBJECTS)
             "${SHAOLIN_PRIVATE_GEN}"
             "${SHAOLIN_REPO_ROOT}/src")
         target_compile_definitions(main PRIVATE SHAOLIN_NATIVE_GUEST=1 SHAOLIN_REAL_GAME_BOOT=1)
+        # Native Xbox D3D8 HLE + Vulkan/OpenGL gameplay draw path.
+        include("${CMAKE_CURRENT_SOURCE_DIR}/shaolin_game_graphics.cmake")
         target_link_libraries(main PRIVATE m)
         target_link_options(main PRIVATE "-Wl,--no-undefined")
         message(STATUS
