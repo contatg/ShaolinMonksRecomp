@@ -32,8 +32,13 @@ $symbols = Get-Content $report
 $check = @('x86_kernel','x86_rdtsc','x86_priv','x86_cpuid','x86_icall','x86_trap')
 Write-Host '[2/2] Checking guest CPU dispatch entry points:'
 $missing = @()
+# Check demangled signatures, not C++ Itanium symbol encodings.
+# x86_kernel -> _Z10x86_kernel..., x86_rdtsc -> _Z9x86_rdtscv,
+# and llvm-nm prints symbol type T, W or sometimes t.
 foreach ($name in $check) {
-    $match = @($symbols | Where-Object { $_ -match "\\bT\\s+_Z\\d+$name" })
+    $match = @($symbols | Where-Object {
+        $_ -match ('\\s[TWt]\\s+_Z[0-9]+' + [regex]::Escape($name) + '(?:[^A-Za-z_]|$)')
+    })
     if ($match.Count) { Write-Host "  OK $name" -ForegroundColor Green }
     else { Write-Host "  NOT FOUND $name" -ForegroundColor Yellow; $missing += $name }
 }
