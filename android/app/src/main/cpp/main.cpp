@@ -5,7 +5,11 @@
 #ifdef SHAOLIN_REAL_GAME_BOOT
 #include <kernel/kernel.h>
 #include <string>
-namespace shaolin_android { void StartXboxLogcat(); }
+namespace shaolin_android {
+void StartXboxLogcat();
+void ConfigureGameRenderer(SDL_Window* window, bool opengl);
+void SetGameRenderPercent(uint32_t percent);
+}
 #endif
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -389,6 +393,7 @@ int main(int argc, char** argv) {
     int fps_limit = 60;
     int render_preference = 75;
     int source_fd = -1;
+    bool use_opengl = false;
     for (int i = 1; i + 1 < argc; ++i) {
         if (!std::strcmp(argv[i], "--fps")) {
             int input = std::atoi(argv[++i]);
@@ -396,13 +401,15 @@ int main(int argc, char** argv) {
         } else if (!std::strcmp(argv[i], "--scale")) {
             int input = std::atoi(argv[++i]);
             if (input == 50 || input == 75 || input == 100) render_preference = input;
+        } else if (!std::strcmp(argv[i], "--renderer")) {
+            use_opengl = !std::strcmp(argv[++i], "opengl");
         } else if (!std::strcmp(argv[i], "--game-fd")) {
             const int fd = std::atoi(argv[++i]);
             if (fd >= 0 && fd < 1048576) source_fd = fd;
         }
     }
-    SMLOG("Launcher preferences: FPS=%d (active), future game scale=%d%% (not yet applied)",
-          fps_limit, render_preference);
+    SMLOG("GAME settings: FPS=%d, render scale=%d%%, GPU=%s",
+          fps_limit, render_preference, use_opengl ? "OpenGL ES 3" : "Vulkan");
     ProbeXboxSource(source_fd);
 #ifdef SHAOLIN_REAL_GAME_BOOT
     // Do NOT call PrepareXboxImage: the real Xbox kernel::Boot owns memory,
@@ -430,13 +437,18 @@ int main(int argc, char** argv) {
         return 1;
     }
     SDL_Window* window = SDL_CreateWindow("Shaolin Monks - Xbox ARM64 Boot", 0, 0,
-                                           SDL_WINDOW_VULKAN | SDL_WINDOW_FULLSCREEN |
+                                           (use_opengl ? SDL_WINDOW_OPENGL : SDL_WINDOW_VULKAN) |
+                                           SDL_WINDOW_FULLSCREEN |
                                            SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (!window) {
         SMERR("SDL_CreateWindow: %s", SDL_GetError());
         SDL_Quit();
         return 2;
     }
+#ifdef SHAOLIN_REAL_GAME_BOOT
+    shaolin_android::ConfigureGameRenderer(window, use_opengl);
+    shaolin_android::SetGameRenderPercent(render_preference);
+#endif
     // Start Xbox CPU boot independently of graphics. If a device's Vulkan
     // swapchain fails, the real boot still runs and produces useful logs.
 #ifdef SHAOLIN_REAL_GAME_BOOT
@@ -460,6 +472,28 @@ int main(int argc, char** argv) {
     }
 #endif
 
+#ifdef SHAOLIN_REAL_GAME_BOOT
+    // The guest's Direct3D_CreateDevice initializes the selected REAL game
+    // renderer. Never execute the old animated smoke-test Renderer::Frame.
+    SMLOG("GAME RENDER ACTIVE: Xbox D3D8 draw/present -> %s; waiting for guest frames",
+          use_opengl ? "OpenGL ES 3" : "Shaolin Vulkan");
+    bool alive = true;
+    while (alive) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_TERMINATING)
+                alive = false;
+            else if (event.type == SDL_EVENT_DID_ENTER_FOREGROUND)
+                SMLOG("Android game foreground restored");
+            else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN)
+                SMLOG("Xbox gamepad button pressed");
+        }
+        SDL_Delay(12);
+    }
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    return 0;
+#else
     int result = 0;
     {
         Renderer renderer;
@@ -516,4 +550,5 @@ int main(int argc, char** argv) {
     SDL_DestroyWindow(window);
     SDL_Quit();
     return result;
+#endif
 }
