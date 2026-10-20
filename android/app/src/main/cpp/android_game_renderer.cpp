@@ -68,6 +68,7 @@ bool ReadXboxVertexRegister(const Assembled& a, uint32_t vertex, unsigned reg, f
     const VertexBuffer& b = a.buffers[e.buffer];
     if (!b.src || b.stride == 0) return false;
     const uint64_t off = uint64_t(vertex) * b.stride + e.offset;
+    if (off > b.bytes) return false;
     auto readable = [&](size_t bytes) { return off <= b.bytes && bytes <= b.bytes - off; };
     const uint8_t* p = b.src + off;
     auto copyFloats = [&](unsigned n) {
@@ -234,7 +235,9 @@ void main() { outColor=c; })";
                         unsigned(a.elements[0].format), a.vertices.empty() ? 1 : 0);
                 return;
             }
-            (void)ReadXboxVertexRegister(a, i, 3, colour);
+            float diffuse[4]{1.f,1.f,1.f,1.f};
+            if (ReadXboxVertexRegister(a, i, 3, diffuse))
+                std::copy(diffuse, diffuse+4, colour);
             // XYZRHW arrives in Xbox backbuffer pixel coordinates. Normalize
             // against the guest viewport, NOT the Android output size.
             const float x = (pos[0] / float(std::max(1u,w_))) * 2.f - 1.f;
