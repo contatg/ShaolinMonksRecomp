@@ -57,7 +57,14 @@ namespace {
 
 constexpr int kFrames = 3;
 constexpr uint64_t kStaleFrames = 8;  // frames a target may go unused and still be read back
+// Android GPUs share memory with the CPU. Black Mobiu runs with 32 MiB per
+// in-flight Vulkan frame; Shaolin's previous 64 MiB x 3 imposed 192 MiB
+// before texture/target allocations and could push phone drivers into OOM.
+#ifdef __ANDROID__
+constexpr uint64_t kUploadSize = 32ull << 20;
+#else
 constexpr uint64_t kUploadSize = 64ull << 20;
+#endif
 // a draw starting with less than this left in the frame's ring waits for the GPU and starts the ring over
 constexpr uint64_t kUploadReserve = 8ull << 20;
 constexpr VkFormat kBgra = VK_FORMAT_B8G8R8A8_UNORM;
@@ -1370,6 +1377,13 @@ PFN_vkVoidFunction UiLoader(const char* name, void* user) {
 }
 
 bool VulkanBackend::InitUi() {
+#ifdef __ANDROID__
+    // The Java launcher is the Android UI. Black Mobiu initializes its own
+    // native ImGui UI on the SDL thread; Shaolin does not, and initializing
+    // a second ImGui/Vulkan overlay on the guest render worker is unnecessary.
+    // This avoids a second descriptor pool/font upload on mobile GPUs.
+    return false;
+#else
     if (shaolin::options.background) return false;
     if (!ImGui::GetCurrentContext()) {
         ImGui::CreateContext();
@@ -1405,6 +1419,7 @@ bool VulkanBackend::InitUi() {
     ImGui_ImplVulkan_CreateFontsTexture();
     ui_ = true;
     return true;
+#endif
 }
 
 std::filesystem::path PipelineCachePath() { return shaolin::paths::Cache() / "vulkan_pipelines.bin"; }
