@@ -264,8 +264,19 @@ bool PrepareXboxImage(int fd, uint32_t* loaded_entry,
         ++loaded;
     }
     if (disc_for_boot) {
+        // Keep the player-selected ISO mounted for future Xbox D: reads.
+        // The SDK disc reader owns a reopened read-only file descriptor.
         kernel::MountDisc(std::move(disc_for_boot));
-        XB_INFO("XDVDFS filesystem mounted read-only for future Xbox kernel file access");
+        const kernel::Disc* mounted = kernel::MountedDisc();
+        const auto* verified_xbe = mounted ? mounted->Find("default.xbe") : nullptr;
+        if (!verified_xbe || verified_xbe->dir) {
+            XB_ERR("XDVDFS MOUNT FAILED: default.xbe is not accessible after mounting");
+            return false;
+        }
+        XB_INFO("XDVDFS MOUNT READY: D: root is backed by the selected ISO; default.xbe=%u bytes; original assets stay in the ISO",
+                verified_xbe->size);
+    } else {
+        XB_INFO("Standalone XBE has no ISO data mounted; the remaining game assets must be supplied separately");
     }
     XB_INFO("Xbox guest image loaded: %zu preload sections, entry=0x%08x, guest base=%p",
             loaded, img.entry, static_cast<void*>(guest));
