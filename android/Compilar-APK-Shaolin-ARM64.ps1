@@ -48,6 +48,21 @@ if (-not (Test-Path -LiteralPath $apk -PathType Leaf)) {
 }
 $destination=Join-Path $output 'ShaolinMobiu-ARM64-Recomp-Experimental.apk'
 Copy-Item -LiteralPath $apk -Destination $destination -Force
+# Verify Gradle actually packaged the game's native SDL library, rather than
+# reporting a successful but launcher-only Android APK.
+Add-Type -AssemblyName 'System.IO.Compression.FileSystem'
+$archive=[System.IO.Compression.ZipFile]::OpenRead($destination)
+try {
+    $nativeEntry=@($archive.Entries | Where-Object {
+        $_.FullName -eq 'lib/arm64-v8a/libmain.so'
+    })
+    if($nativeEntry.Count -ne 1 -or $nativeEntry[0].Length -lt 1000000) {
+        throw 'APK does not contain a plausible private ARM64 libmain.so. Check shaolinNativeGame CMake flag.'
+    }
+    Write-Host "Verified APK contains ARM64 SDL/game libmain.so ($($nativeEntry[0].Length) bytes)."
+} finally {
+    $archive.Dispose()
+}
 $info=Get-Item -LiteralPath $destination
 $hash=(Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
 Write-Host "APK generated: $($info.FullName)" -ForegroundColor Green
@@ -56,3 +71,4 @@ Write-Host "SHA256: $hash"
 Write-Host "Build log: $log"
 Write-Host 'IMPORTANT: This APK links real Xbox recomp and Krypt; gameplay still needs kernel/XDK + game renderer.'
 Write-Host 'Install only on your test phone and capture logcat tagged ShaolinXbox.'
+Write-Host "To view runtime on your test phone, run: adb logcat -s ShaolinXbox:* ShaolinMobiu:*"
