@@ -14,6 +14,7 @@
 #include "gpu/texture.h"
 #include "gpu/vertex.h"
 #include "kernel/kernel.h"
+#include "shaolin_game_trace.h"
 
 #define GPUINFO(...) __android_log_print(ANDROID_LOG_INFO, "ShaolinGPU", __VA_ARGS__)
 #define GPUERR(...) __android_log_print(ANDROID_LOG_ERROR, "ShaolinGPU", __VA_ARGS__)
@@ -63,12 +64,17 @@ public:
         }
     }
     bool Init(uint32_t w, uint32_t h) override {
-        if (!shaolin_android::GameWindow()) return false;
+        shaolin_android::Trace("GLES_BACKEND_INIT_BEGIN %ux%u", w, h);
+        if (!shaolin_android::GameWindow()) {
+            shaolin_android::Trace("GLES_BACKEND_INIT_FAIL no SDL game window");
+            return false;
+        }
         w_ = w ? w : 640;
         h_ = h ? h : 480;
         ctx_ = SDL_GL_CreateContext(shaolin_android::GameWindow());
         if (!ctx_) {
             GPUERR("GLES3 SDL_GL_CreateContext: %s", SDL_GetError());
+            shaolin_android::Trace("GLES_BACKEND_INIT_FAIL SDL_GL_CreateContext: %s", SDL_GetError());
             return false;
         }
         SDL_GL_MakeCurrent(shaolin_android::GameWindow(), ctx_);
@@ -102,6 +108,7 @@ void main() { outColor=c; })";
         glDisable(GL_CULL_FACE);
         glViewport(0, 0, w_, h_);
         GPUINFO("Real D3D8 OpenGL ES backend initialized for %ux%u guest framebuffer", w_, h_);
+        shaolin_android::Trace("GLES_BACKEND_INIT_OK %ux%u", w_, h_);
         return true;
     }
     void Clear(const State&, uint32_t, const uint8_t*, uint32_t flags,
@@ -167,6 +174,7 @@ void main() { outColor=c; })";
             GPUINFO("GLES unsupported guest surface Copy");
     }
     void Present(const Surface&) override {
+        shaolin_android::TracePresent("GLES3");
         if (!ctx_) return;
         if (!SDL_GL_SwapWindow(shaolin_android::GameWindow()))
             GPUERR("GLES SDL_GL_SwapWindow: %s",SDL_GetError());
@@ -183,9 +191,11 @@ void main() { outColor=c; })";
 std::unique_ptr<Backend> CreateBackend() {
     if (shaolin_android::UseOpenGL()) {
         GPUINFO("Xbox D3D8 host backend selected: OpenGL ES 3");
+        shaolin_android::Trace("XBOX_D3D8_CREATE_BACKEND GLES3");
         return std::make_unique<OpenGLESBackend>();
     }
     GPUINFO("Xbox D3D8 host backend selected: Vulkan (Shaolin Linux port)");
+    shaolin_android::Trace("XBOX_D3D8_CREATE_BACKEND Vulkan");
     return CreateVulkanBackend();
 }
 } // namespace gpu
