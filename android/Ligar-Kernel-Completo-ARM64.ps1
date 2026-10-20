@@ -10,7 +10,7 @@ $buildNinja=Get-ChildItem $buildRoot -Filter build.ninja -File -Recurse |
  Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if(!$buildNinja){ throw 'Missing Android ARM64 build.ninja' }
 $build=$buildNinja.Directory.FullName
-foreach($target in @('shaolin_xbox_kernel_arm64','shaolin_xbox_boot_arm64','shaolin_krypt_routines_arm64','shaolin_guest_arm64','shaolin_dispatch_arm64','shaolin_kernel_symbols_arm64','main')){
+foreach($target in @('shaolin_xbox_kernel_arm64','shaolin_xbox_boot_arm64','shaolin_krypt_routines_arm64','shaolin_guest_arm64','shaolin_dispatch_arm64','shaolin_kernel_symbols_arm64','shaolin_android_boot_host_arm64','main')){
  Write-Host "Building existing target: $target"
  & cmake --build $build --target $target --parallel 2
  if($LASTEXITCODE -ne 0){ throw "Compilation failed at $target ($LASTEXITCODE)" }
@@ -21,7 +21,8 @@ $targets=@(
   @('shaolin_dispatch_arm64.dir',1),
   @('shaolin_krypt_routines_arm64.dir',30),
   @('shaolin_xbox_kernel_arm64.dir',4),
-  @('shaolin_xbox_boot_arm64.dir',2)
+  @('shaolin_xbox_boot_arm64.dir',2),
+  @('shaolin_android_boot_host_arm64.dir',1)
 )
 $inputs=@()
 foreach($pair in $targets){
