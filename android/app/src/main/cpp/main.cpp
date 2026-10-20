@@ -11,6 +11,7 @@ namespace shaolin_android {
 void StartXboxLogcat();
 void ConfigureGameRenderer(SDL_Window* window, bool opengl);
 void SetGameRenderPercent(uint32_t percent);
+void SetGameFpsCap(uint32_t fps);
 }
 #endif
 #include <SDL3/SDL.h>
@@ -458,6 +459,7 @@ int main(int argc, char** argv) {
     input::Init();
     shaolin_android::ConfigureGameRenderer(window, use_opengl);
     shaolin_android::SetGameRenderPercent(render_preference);
+    shaolin_android::SetGameFpsCap(fps_limit);
 #endif
     // Start Xbox CPU boot independently of graphics. If a device's Vulkan
     // swapchain fails, the real boot still runs and produces useful logs.
