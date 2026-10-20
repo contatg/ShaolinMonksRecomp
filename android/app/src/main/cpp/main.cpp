@@ -4,6 +4,7 @@
 #include "xbox_bootstrap.h"
 #ifdef SHAOLIN_REAL_GAME_BOOT
 #include <kernel/kernel.h>
+#include <core/input.h>
 #include <string>
 namespace shaolin_android {
 void StartXboxLogcat();
@@ -436,6 +437,13 @@ int main(int argc, char** argv) {
         SMERR("SDL_Init: %s", SDL_GetError());
         return 1;
     }
+    // SDL Android needs GLES3 configured before creating its EGL window.
+    if (use_opengl) {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    }
     SDL_Window* window = SDL_CreateWindow("Shaolin Monks - Xbox ARM64 Boot", 0, 0,
                                            (use_opengl ? SDL_WINDOW_OPENGL : SDL_WINDOW_VULKAN) |
                                            SDL_WINDOW_FULLSCREEN |
@@ -446,6 +454,7 @@ int main(int argc, char** argv) {
         return 2;
     }
 #ifdef SHAOLIN_REAL_GAME_BOOT
+    input::Init();
     shaolin_android::ConfigureGameRenderer(window, use_opengl);
     shaolin_android::SetGameRenderPercent(render_preference);
 #endif
