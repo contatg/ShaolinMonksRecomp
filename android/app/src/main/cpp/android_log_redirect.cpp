@@ -1,6 +1,7 @@
 // Forward real XboxXBERecomp core/log.cpp stderr diagnostics to Android
 // logcat without modifying pinned SDK sources or suppressing guest crashes.
 #include <android/log.h>
+#include "shaolin_game_trace.h"
 #include <atomic>
 #include <cerrno>
 #include <cstdio>
@@ -42,16 +43,20 @@ void StartXboxLogcat() {
             for (ssize_t i = 0; i < n; ++i) {
                 char ch = chunk[i];
                 if (ch == '\n' || line.size() >= 4095) {
-                    if (!line.empty())
+                    if (!line.empty()) {
                         __android_log_write(ANDROID_LOG_INFO, "ShaolinXboxKernel", line.c_str());
+                        shaolin_android::Trace("XBOX_KERNEL %s", line.c_str());
+                    }
                     line.clear();
                 } else if (ch != '\r') {
                     line.push_back(ch);
                 }
             }
         }
-        if (!line.empty())
+        if (!line.empty()) {
             __android_log_write(ANDROID_LOG_INFO, "ShaolinXboxKernel", line.c_str());
+            shaolin_android::Trace("XBOX_KERNEL %s", line.c_str());
+        }
         close(in);
     }).detach();
     // A guest thread's uncaught C++ exception otherwise terminates Android
