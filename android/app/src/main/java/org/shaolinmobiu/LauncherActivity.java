@@ -29,7 +29,8 @@ import java.util.Locale;
 /**
  * Standalone Android launcher for the ARM64 bringup.
  * The game document URI and preferences are stored privately and are never uploaded.
- * The current native activity is a Vulkan renderer test, not a playable game.
+ * Private GameBoot builds can start the genuine recompiled Xbox guest thread.
+ * Graphics/audio compatibility must still be verified on a device.
  */
 public final class LauncherActivity extends Activity {
     public static final String PREFERENCES = "shaolin_launcher";
@@ -53,6 +54,7 @@ public final class LauncherActivity extends Activity {
     private LinearLayout root;
     private TextView gameDetails;
     private String verificationStatus = "";
+    private boolean nativeGameBootBuild;
     private LinearLayout resOptions;
     private LinearLayout fpsOptions;
 
@@ -122,6 +124,12 @@ public final class LauncherActivity extends Activity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         prefs = getSharedPreferences(PREFERENCES, MODE_PRIVATE);
+        try {
+            String version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            nativeGameBootBuild = version != null && version.contains("xbox-gameboot");
+        } catch (android.content.pm.PackageManager.NameNotFoundException ignored) {
+            nativeGameBootBuild = false;
+        }
         buildLayout();
     }
 
@@ -160,7 +168,8 @@ public final class LauncherActivity extends Activity {
         hero.setBackground(background(Color.rgb(95, 27, 41), Color.rgb(22, 19, 29), 26));
         root.addView(hero, verticalParams(25, 0));
 
-        TextView badge = text("●  PRÉVIA DE DESENVOLVIMENTO", 11, GOLD, true);
+        TextView badge = text(nativeGameBootBuild
+            ? "●  XBOX GAMEBOOT ARM64" : "●  PRÉVIA DE DESENVOLVIMENTO", 11, GOLD, true);
         badge.setLetterSpacing(0.1f);
         hero.addView(badge);
         TextView title = text("SHAOLIN", 41, WHITE, true);
@@ -174,9 +183,11 @@ public final class LauncherActivity extends Activity {
         LinearLayout.LayoutParams accentParams = new LinearLayout.LayoutParams(dp(72), dp(4));
         accentParams.setMargins(0, dp(12), 0, dp(16));
         hero.addView(accentLine, accentParams);
-        TextView description = text(
-            "Port nativo em desenvolvimento. O Vulkan já funciona; "
-                + "a execução do jogo original ainda está sendo integrada.",
+        TextView description = text(nativeGameBootBuild
+            ? "Carregue sua ISO original para iniciar o kernel Xbox e a thread do jogo. "
+                + "O renderizador D3D8 e o áudio ainda podem impedir a imagem ou causar crashes."
+            : "Este APK público é apenas uma prévia de gráficos. Use a compilação "
+                + "GameBoot privada para executar o código Xbox recompilado.",
             14, Color.rgb(221, 205, 203), false);
         description.setLineSpacing(dp(4), 1f);
         hero.addView(description);
@@ -236,12 +247,18 @@ public final class LauncherActivity extends Activity {
         section = text("INICIAR", 12, GOLD, true);
         section.setLetterSpacing(0.15f);
         root.addView(section, verticalParams(28, 13));
-        root.addView(button("▶  TESTAR GRÁFICOS VULKAN", true, this::startNative));
-        root.addView(button("Jogar Shaolin Monks  •  Em desenvolvimento", false,
-            this::showNotPlayable), verticalParams(11, 0));
+        if (nativeGameBootBuild) {
+            root.addView(button("▶  JOGAR SHAOLIN MONKS", true, this::startGameBoot));
+        } else {
+            root.addView(button("▶  TESTAR GRÁFICOS VULKAN", true, this::startNative));
+            root.addView(button("Jogar Shaolin Monks  •  Requer GameBoot", false,
+                this::showNotPlayable), verticalParams(11, 0));
+        }
 
-        TextView footer = text(
-            "PRÉVIA TÉCNICA  •  Nenhum arquivo do jogo está incluso.\n"
+        TextView footer = text(nativeGameBootBuild
+            ? "XBOX GAMEBOOT  •  ISO original necessária.\n"
+                + "A execução pode falhar enquanto os serviços gráficos são integrados."
+            : "PRÉVIA TÉCNICA  •  Nenhum arquivo do jogo está incluso.\n"
                 + "O teste Vulkan não executa a campanha.",
             11, MUTED, false);
         footer.setGravity(Gravity.CENTER);
@@ -367,7 +384,9 @@ public final class LauncherActivity extends Activity {
             "\n" + (verificationStatus.isEmpty()
                 ? "Acesso salvo no Android. Toque em Verificar arquivo para analisar."
                 : verificationStatus) +
-            "\nO motor Xbox ainda não executa este conteúdo no Android.");
+            (nativeGameBootBuild
+                ? "\nPronto para tentar iniciar o Xbox GameBoot pela ISO."
+                : "\nEste APK não contém o código Xbox recompilado."));
     }
 
     private void inspectSelectedGame() {
@@ -392,22 +411,44 @@ public final class LauncherActivity extends Activity {
         startActivity(intent);
     }
 
+    private void startGameBoot() {
+        if (!nativeGameBootBuild) {
+            showNotPlayable();
+            return;
+        }
+        final String uri = prefs.getString(KEY_GAME_URI, "");
+        final String kind = prefs.getString(KEY_GAME_KIND, "");
+        final String name = prefs.getString(KEY_GAME_NAME, "").toLowerCase(Locale.ROOT);
+        if (uri.isEmpty() || !"file".equals(kind) ||
+            !(name.endsWith(".iso") || name.endsWith(".xiso"))) {
+            new AlertDialog.Builder(this)
+                .setTitle("Selecione a ISO do Shaolin Monks")
+                .setMessage("Para iniciar a CPU Xbox, selecione a ISO/XISO completa e original na Biblioteca. Arquivos ZIP e pastas não são suportados pelo GameBoot.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Selecionar ISO", (dialog, which) -> chooseGame())
+                .show();
+            return;
+        }
+        startNative();
+    }
+
     private void showNotPlayable() {
         new AlertDialog.Builder(this)
-            .setTitle("Shaolin Monks • Port em andamento")
-            .setMessage("O aplicativo já abre Vulkan e registra comandos de toque. " +
-                "O runtime Xbox, o áudio e as cenas do jogo ainda não estão conectados ao Android. " +
-                "O botão Testar gráficos abre a demonstração Vulkan disponível agora.")
+            .setTitle("Versão GameBoot necessária")
+            .setMessage("Este APK é o launcher público sem código de jogo recompilado. " +
+                "Instale sua compilação privada ShaolinMobiu-ARM64-GameBoot.apk para iniciar o kernel Xbox usando sua ISO.")
             .setPositiveButton("Entendi", null).show();
     }
 
     private void showAbout() {
         new AlertDialog.Builder(this)
             .setTitle("SHAOLIN MOBIU")
-            .setMessage("Prévia Android ARM64 com SDL3 e Vulkan.\n\n" +
-                "Base: OAleex/ShaolinMonksRecomp.\n" +
-                "Arquitetura Android: projeto nativo próprio.\n\n" +
-                "Não inclui nem executa arquivos licenciados do jogo nesta versão.")
+            .setMessage(nativeGameBootBuild
+                ? "GameBoot ARM64: inicia o kernel Xbox e tenta rodar o XBE original da ISO.\n\n" +
+                    "A imagem D3D8 do jogo e áudio ainda estão em integração.\n" +
+                    "Nenhum arquivo licenciado está incluído."
+                : "Prévia pública do launcher ARM64 e Vulkan.\n\n" +
+                    "Não contém o código do jogo. Compile a versão privada GameBoot para executar sua ISO.")
             .setPositiveButton("Fechar", null).show();
     }
 }
