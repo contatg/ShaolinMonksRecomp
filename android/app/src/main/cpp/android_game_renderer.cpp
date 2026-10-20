@@ -15,6 +15,7 @@
 #include "gpu/vertex.h"
 #include "kernel/kernel.h"
 #include "shaolin_game_trace.h"
+#include "android_graphics_host.h"
 
 #define GPUINFO(...) __android_log_print(ANDROID_LOG_INFO, "ShaolinGPU", __VA_ARGS__)
 #define GPUERR(...) __android_log_print(ANDROID_LOG_ERROR, "ShaolinGPU", __VA_ARGS__)
@@ -51,6 +52,7 @@ class OpenGLESBackend final : public Backend {
     SDL_GLContext ctx_ = nullptr;
     GLuint shader_ = 0;
     GLuint vbo_ = 0;
+    GLuint ebo_ = 0;
     GLint pos_ = -1, color_ = -1;
     uint32_t w_ = 0, h_ = 0;
     uint64_t draws_ = 0, frames_ = 0;
@@ -60,6 +62,7 @@ public:
         if (ctx_) {
             if (shader_) glDeleteProgram(shader_);
             if (vbo_) glDeleteBuffers(1, &vbo_);
+            if (ebo_) glDeleteBuffers(1, &ebo_);
             SDL_GL_DestroyContext(ctx_);
         }
     }
@@ -77,7 +80,10 @@ public:
             shaolin_android::Trace("GLES_BACKEND_INIT_FAIL SDL_GL_CreateContext: %s", SDL_GetError());
             return false;
         }
-        SDL_GL_MakeCurrent(shaolin_android::GameWindow(), ctx_);
+        if (!SDL_GL_MakeCurrent(shaolin_android::GameWindow(), ctx_)) {
+            shaolin_android::Trace("GLES_BACKEND_INIT_FAIL MakeCurrent: %s", SDL_GetError());
+            return false;
+        }
         SDL_GL_SetSwapInterval(1);
         const char* vs = R"(#version 300 es
 precision highp float;
@@ -91,7 +97,11 @@ in vec4 c;
 out vec4 outColor;
 void main() { outColor=c; })";
         GLuint v = Compile(GL_VERTEX_SHADER, vs), f = Compile(GL_FRAGMENT_SHADER, fs);
-        if (!v || !f) return false;
+        if (!v || !f) {
+            if (v) glDeleteShader(v);
+            if (f) glDeleteShader(f);
+            return false;
+        }
         shader_ = glCreateProgram();
         glAttachShader(shader_, v); glAttachShader(shader_, f);
         glLinkProgram(shader_);
@@ -103,10 +113,13 @@ void main() { outColor=c; })";
             return false;
         }
         glGenBuffers(1, &vbo_);
+        glGenBuffers(1, &ebo_);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDisable(GL_CULL_FACE);
-        glViewport(0, 0, w_, h_);
+        int output_w = 0, output_h = 0;
+        shaolin_android::GameOutputSize(&output_w, &output_h);
+        glViewport(0, 0, output_w, output_h);
         GPUINFO("Real D3D8 OpenGL ES backend initialized for %ux%u guest framebuffer", w_, h_);
         shaolin_android::Trace("GLES_BACKEND_INIT_OK %ux%u", w_, h_);
         return true;
@@ -165,7 +178,14 @@ void main() { outColor=c; })";
         glVertexAttribPointer(0,4,GL_FLOAT,GL_FALSE,sizeof(Vertex),nullptr);
         glEnableVertexAttribArray(1);
         glVertexAttribPointer(1,4,GL_FLOAT,GL_FALSE,sizeof(Vertex),(const void*)(4*sizeof(float)));
-        glDrawArrays(mode,0,(GLsizei)verts.size());
+        if (!a.indices.empty()) {
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo_);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, a.indices.size() * sizeof(uint32_t),
+                         a.indices.data(), GL_STREAM_DRAW);
+            glDrawElements(mode, GLsizei(a.indices.size()), GL_UNSIGNED_INT, nullptr);
+        } else {
+            glDrawArrays(mode, 0, GLsizei(verts.size()));
+        }
         ++draws_;
     }
     void Copy(const Surface& src, const Surface& dst,
@@ -174,10 +194,13 @@ void main() { outColor=c; })";
             GPUINFO("GLES unsupported guest surface Copy");
     }
     void Present(const Surface&) override {
-        shaolin_android::TracePresent("GLES3");
         if (!ctx_) return;
-        if (!SDL_GL_SwapWindow(shaolin_android::GameWindow()))
+        if (!SDL_GL_SwapWindow(shaolin_android::GameWindow())) {
             GPUERR("GLES SDL_GL_SwapWindow: %s",SDL_GetError());
+            shaolin_android::Trace("GLES_PRESENT_FAILED %s", SDL_GetError());
+            return;
+        }
+        shaolin_android::TracePresent("GLES3");
         if (++frames_%300 == 1)
             GPUINFO("REAL XBOX GLES Present frame=%llu draw_calls=%llu",
                     (unsigned long long)frames_,(unsigned long long)draws_);
@@ -187,12 +210,51 @@ void main() { outColor=c; })";
     void Flush() override { glFlush(); }
     void SetGamma(const uint8_t*) override {}
 };
+
+// The Xbox thread initializes the backend, then the render worker draws.
+// A GL context cannot remain current on the first thread while the second
+// issues commands. Keep all GLES work, including destruction, on SDL's thread.
+class MainThreadBackend final : public Backend {
+    std::unique_ptr<Backend> inner_;
+    template<class F> bool Run(F&& f) {
+        if (shaolin_android::OnMainThread(std::forward<F>(f))) return true;
+        shaolin_android::ReportGraphicsFailure("Cannot dispatch GLES work to SDL");
+        return false;
+    }
+public:
+    explicit MainThreadBackend(std::unique_ptr<Backend> inner) : inner_(std::move(inner)) {}
+    ~MainThreadBackend() override {
+        if (inner_ && !Run([&] { inner_.reset(); })) {
+            // The SDL queue is gone. Never delete a context on a guest thread.
+            (void)inner_.release();
+        }
+    }
+    bool Init(uint32_t w, uint32_t h) override {
+        bool ok = false;
+        return Run([&] { ok = inner_->Init(w, h); }) && ok;
+    }
+    void Clear(const State& s, uint32_t count, const uint8_t* rects, uint32_t flags,
+               uint32_t color, float z, uint32_t stencil) override {
+        Run([&] { inner_->Clear(s, count, rects, flags, color, z, stencil); });
+    }
+    void Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) override {
+        Run([&] { inner_->Draw(s, prim, start, count, indices); });
+    }
+    void Copy(const Surface& src, const Surface& dst, uint32_t n, uint32_t rects, uint32_t points) override {
+        Run([&] { inner_->Copy(src, dst, n, rects, points); });
+    }
+    void Present(const Surface& front) override { Run([&] { inner_->Present(front); }); }
+    void Sync(uint32_t va, uint32_t size) override { Run([&] { inner_->Sync(va, size); }); }
+    void SyncLate(uint32_t va) override { Run([&] { inner_->SyncLate(va); }); }
+    void Flush() override { Run([&] { inner_->Flush(); }); }
+    void SetGamma(const uint8_t* ramp) override { Run([&] { inner_->SetGamma(ramp); }); }
+};
 }
 std::unique_ptr<Backend> CreateBackend() {
     if (shaolin_android::UseOpenGL()) {
         GPUINFO("Xbox D3D8 host backend selected: OpenGL ES 3");
         shaolin_android::Trace("XBOX_D3D8_CREATE_BACKEND GLES3");
-        return std::make_unique<OpenGLESBackend>();
+        return std::make_unique<MainThreadBackend>(std::make_unique<OpenGLESBackend>());
     }
     GPUINFO("Xbox D3D8 host backend selected: Vulkan (Shaolin Linux port)");
     shaolin_android::Trace("XBOX_D3D8_CREATE_BACKEND Vulkan");

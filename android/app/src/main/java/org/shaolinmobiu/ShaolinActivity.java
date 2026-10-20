@@ -1,6 +1,7 @@
 package org.shaolinmobiu;
 
 import android.content.SharedPreferences;
+import android.content.Intent;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
@@ -27,8 +28,11 @@ public final class ShaolinActivity extends SDLActivity {
     @Override
     protected String[] getArguments() {
         SharedPreferences prefs = getSharedPreferences(LauncherActivity.PREFERENCES, MODE_PRIVATE);
-        int fps = prefs.getInt(LauncherActivity.KEY_FPS, 60);
-        int scale = prefs.getInt(LauncherActivity.KEY_RESOLUTION, 75);
+        Intent launch = getIntent();
+        int fps = launch.getIntExtra(LauncherActivity.KEY_FPS,
+            prefs.getInt(LauncherActivity.KEY_FPS, 60));
+        int scale = launch.getIntExtra(LauncherActivity.KEY_RESOLUTION,
+            prefs.getInt(LauncherActivity.KEY_RESOLUTION, 75));
         ArrayList<String> args = new ArrayList<>();
         args.add("--fps");
         args.add(Integer.toString(fps == 30 ? 30 : 60));
@@ -44,13 +48,13 @@ public final class ShaolinActivity extends SDLActivity {
         }
         args.add("--trace-file");
         args.add(trace.getAbsolutePath());
-        String renderer = prefs.getString(LauncherActivity.KEY_RENDERER, "vulkan");
+        String renderer = setting(launch, prefs, LauncherActivity.KEY_RENDERER, "vulkan");
         args.add("--renderer");
         args.add("opengl".equals(renderer) ? "opengl" : "vulkan");
         Log.i(TAG, "Launching genuine Xbox game graphics backend: " + renderer);
 
-        final String uriText = prefs.getString(LauncherActivity.KEY_GAME_URI, "");
-        final String kind = prefs.getString(LauncherActivity.KEY_GAME_KIND, "");
+        final String uriText = setting(launch, prefs, LauncherActivity.KEY_GAME_URI, "");
+        final String kind = setting(launch, prefs, LauncherActivity.KEY_GAME_KIND, "");
         if ("file".equals(kind) && !uriText.isEmpty()) {
             try {
                 // The SDL thread and the native main entry share the same Linux process.
@@ -68,6 +72,11 @@ public final class ShaolinActivity extends SDLActivity {
             }
         }
         return args.toArray(new String[0]);
+    }
+
+    private static String setting(Intent intent, SharedPreferences prefs, String key, String fallback) {
+        String value = intent.hasExtra(key) ? intent.getStringExtra(key) : prefs.getString(key, fallback);
+        return value == null ? fallback : value;
     }
 
     @Override

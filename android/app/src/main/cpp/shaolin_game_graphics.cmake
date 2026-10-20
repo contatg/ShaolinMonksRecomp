@@ -18,7 +18,9 @@ FetchContent_Declare(shaolin_android_imgui
     GIT_TAG v1.91.0)
 FetchContent_MakeAvailable(glslang shaolin_android_imgui)
 
-set(SHAOLIN_ADAPTED "${SHAOLIN_REPO_ROOT}/build/release/adapted")
+if(NOT SHAOLIN_ADAPTED)
+    set(SHAOLIN_ADAPTED "${SHAOLIN_REPO_ROOT}/build/release/adapted")
+endif()
 foreach(f d3d8.cpp dsound.cpp vertex.cpp shaders.cpp render_thread.cpp)
     if(NOT EXISTS "${SHAOLIN_ADAPTED}/${f}")
         message(FATAL_ERROR
@@ -44,17 +46,27 @@ set(SHAOLIN_RENDER_THREAD
 set(SHAOLIN_ARM64_RENDER_THREAD "${CMAKE_CURRENT_BINARY_DIR}/shaolin_render_thread_arm64.cpp")
 file(WRITE "${SHAOLIN_ARM64_RENDER_THREAD}" "${SHAOLIN_RENDER_THREAD}")
 
+# GLES consumes converted float vertices. Keep Vulkan's raw vertex fast path.
+file(READ "${SHAOLIN_ADAPTED}/vertex.cpp" SHAOLIN_VERTEX)
+shaolin_replace_once(SHAOLIN_VERTEX
+    "bool raw = kRawVertices && RawReadable(s, inputs);"
+    "bool raw = !shaolin_android::UseOpenGL() && kRawVertices && RawReadable(s, inputs);")
+set(SHAOLIN_ANDROID_VERTEX_CPP "${CMAKE_CURRENT_BINARY_DIR}/shaolin_vertex_android.cpp")
+file(WRITE "${SHAOLIN_ANDROID_VERTEX_CPP}"
+    "namespace shaolin_android { bool UseOpenGL(); }\n${SHAOLIN_VERTEX}")
+
 find_library(shaolin_gles3 GLESv3 REQUIRED)
 find_library(shaolin_egl EGL REQUIRED)
 
 set(SHAOLIN_VK "${SHAOLIN_REPO_ROOT}/src/linux/vk")
+shaolin_prepare_android_d3d("${SHAOLIN_ADAPTED}/d3d8.cpp" SHAOLIN_ANDROID_D3D_CPP)
 target_sources(main PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/android_game_renderer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/android_game_host.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/android_game_audio.cpp"
-    "${SHAOLIN_ADAPTED}/d3d8.cpp"
+    "${SHAOLIN_ANDROID_D3D_CPP}"
     "${SHAOLIN_ADAPTED}/dsound.cpp"
-    "${SHAOLIN_ADAPTED}/vertex.cpp"
+    "${SHAOLIN_ANDROID_VERTEX_CPP}"
     "${SHAOLIN_ADAPTED}/shaders.cpp"
     "${SHAOLIN_ARM64_RENDER_THREAD}"
     "${XBE_SDK}/runtime/gpu/texture.cpp"

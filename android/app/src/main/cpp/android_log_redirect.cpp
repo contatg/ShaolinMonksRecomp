@@ -1,5 +1,5 @@
-// Forward real XboxXBERecomp core/log.cpp stderr diagnostics to Android
-// logcat without modifying pinned SDK sources or suppressing guest crashes.
+// Record uncaught guest/host exceptions without suppressing native tombstones.
+// The Android copy of core/log.cpp writes synchronous kernel diagnostics.
 #include <android/log.h>
 #include "shaolin_game_trace.h"
 #include <atomic>
@@ -15,50 +15,8 @@ namespace shaolin_android {
 void StartXboxLogcat() {
     static std::atomic<bool> started{false};
     if (started.exchange(true)) return;
-    int fd[2]{};
-    if (pipe(fd) != 0) {
-        __android_log_print(ANDROID_LOG_ERROR, "ShaolinXboxKernel",
-                            "stderr logcat pipe failed: errno=%d", errno);
-        return;
-    }
-    std::fflush(stderr);
-    if (dup2(fd[1], STDERR_FILENO) < 0) {
-        __android_log_print(ANDROID_LOG_ERROR, "ShaolinXboxKernel",
-                            "stderr logcat dup2 failed: errno=%d", errno);
-        close(fd[0]);
-        close(fd[1]);
-        return;
-    }
-    close(fd[1]);
-    setvbuf(stderr, nullptr, _IONBF, 0);
-    std::thread([in = fd[0]] {
-        char chunk[1024];
-        std::string line;
-        while (true) {
-            const ssize_t n = read(in, chunk, sizeof chunk);
-            if (n <= 0) {
-                if (n < 0 && errno == EINTR) continue;
-                break;
-            }
-            for (ssize_t i = 0; i < n; ++i) {
-                char ch = chunk[i];
-                if (ch == '\n' || line.size() >= 4095) {
-                    if (!line.empty()) {
-                        __android_log_write(ANDROID_LOG_INFO, "ShaolinXboxKernel", line.c_str());
-                        shaolin_android::Trace("XBOX_KERNEL %s", line.c_str());
-                    }
-                    line.clear();
-                } else if (ch != '\r') {
-                    line.push_back(ch);
-                }
-            }
-        }
-        if (!line.empty()) {
-            __android_log_write(ANDROID_LOG_INFO, "ShaolinXboxKernel", line.c_str());
-            shaolin_android::Trace("XBOX_KERNEL %s", line.c_str());
-        }
-        close(in);
-    }).detach();
+    // The adapted core logger writes each message directly to Trace().
+    // No asynchronous stderr consumer is needed before kernel::_Exit.
     // A guest thread's uncaught C++ exception otherwise terminates Android
     // without necessarily draining stderr. Record the exception directly
     // before triggering the normal native tombstone.
@@ -84,6 +42,6 @@ void StartXboxLogcat() {
         std::abort();
     });
     __android_log_write(ANDROID_LOG_INFO, "ShaolinXboxKernel",
-                        "Xbox kernel/game stderr diagnostics now routed to logcat");
+                        "Synchronous Xbox diagnostics and uncaught exception reporting enabled");
 }
 } // namespace shaolin_android

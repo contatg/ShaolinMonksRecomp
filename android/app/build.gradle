@@ -38,7 +38,8 @@ android {
                     ((project.findProperty("shaolinNativeGame") == "true" ||
                       project.findProperty("shaolinGuestObjects") == "true") ? "ON" : "OFF"),
                     "-DSHAOLIN_EMBED_NATIVE_GUEST=" +
-                    (project.findProperty("shaolinNativeGame") == "true" ? "ON" : "OFF")
+                    (project.findProperty("shaolinNativeGame") == "true" ? "ON" : "OFF"),
+                    "-DSHAOLIN_BUILD_REVISION=" + (project.findProperty("shaolinRevision") ?: "unknown")
             }
         }
     }

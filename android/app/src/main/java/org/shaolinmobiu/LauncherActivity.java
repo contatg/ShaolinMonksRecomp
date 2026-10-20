@@ -436,6 +436,13 @@ public final class LauncherActivity extends Activity {
 
     private void startNative() {
         Intent intent = new Intent(this, ShaolinActivity.class);
+        // Snapshot settings for the separate SDL process. SharedPreferences
+        // caches are not coherent across Android processes.
+        intent.putExtra(KEY_FPS, prefs.getInt(KEY_FPS, 60));
+        intent.putExtra(KEY_RESOLUTION, prefs.getInt(KEY_RESOLUTION, 75));
+        intent.putExtra(KEY_RENDERER, prefs.getString(KEY_RENDERER, "vulkan"));
+        intent.putExtra(KEY_GAME_URI, prefs.getString(KEY_GAME_URI, ""));
+        intent.putExtra(KEY_GAME_KIND, prefs.getString(KEY_GAME_KIND, ""));
         startActivity(intent);
     }
 

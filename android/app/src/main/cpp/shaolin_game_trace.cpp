@@ -7,6 +7,10 @@
 #include <mutex>
 #include <string>
 
+#ifndef SHAOLIN_BUILD_REVISION
+#define SHAOLIN_BUILD_REVISION "unknown"
+#endif
+
 namespace shaolin_android {
 namespace {
 std::mutex g_lock;
@@ -24,7 +28,8 @@ void TraceInit(const char* absolute_path) {
                         "ShaolinTrace", "private Xbox trace %s",
                         g_log ? "opened" : "could not open");
     if (g_log) {
-        std::fputs("Shaolin GameBoot native trace v1 (no game files or personal paths)\n", g_log);
+        std::fputs("Shaolin GameBoot native trace v2 (no game files)\n", g_log);
+        std::fprintf(g_log, "SOURCE_REVISION=%s\n", SHAOLIN_BUILD_REVISION);
         std::fflush(g_log);
     }
 }

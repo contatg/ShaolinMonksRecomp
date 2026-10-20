@@ -9,20 +9,44 @@
 #include <thread>
 #include <filesystem>
 #include <mutex>
+#include <atomic>
+#include "android_graphics_host.h"
 
 namespace shaolin { Options options{}; }
 namespace shaolin_android {
 SDL_Window* GameWindow();
 static uint32_t render_percent = 75;
 static uint32_t fps_cap = 60;
-void SetGameRenderPercent(uint32_t v) { render_percent = (v==50||v==75||v==100) ? v : 75; }
-void SetGameFpsCap(uint32_t v) { fps_cap = v == 30 ? 30 : 60; }
+static std::atomic<uint64_t> output_size{(uint64_t(1280) << 32) | 720};
+static std::atomic<bool> graphics_failed{false};
+void UpdateGameOutput() {
+    if (!SDL_IsMainThread()) return;
+    int w = 0, h = 0;
+    if (auto* window = GameWindow()) SDL_GetWindowSizeInPixels(window, &w, &h);
+    output_size.store((uint64_t(std::max(w, 0)) << 32) | uint32_t(std::max(h, 0)));
+}
+void GameOutputSize(int* width, int* height) {
+    const uint64_t size = output_size.load();
+    *width = int(size >> 32);
+    *height = int(uint32_t(size));
+}
+void ReportGraphicsFailure(const char* reason) {
+    Trace("GRAPHICS_FATAL %s", reason);
+    graphics_failed.store(true);
+}
+bool GraphicsFailed() { return graphics_failed.load(); }
+void SetGameRenderPercent(uint32_t v) {
+    render_percent = (v==50||v==75||v==100) ? v : 75;
+    app::Get().render_percent = render_percent;
+}
+void SetGameFpsCap(uint32_t v) {
+    fps_cap = v == 30 ? 30 : 60;
+    app::Get().fps_cap = fps_cap;
+}
 }
 namespace app {
 static Settings g_android_settings;
 Settings& Get() {
-    g_android_settings.render_percent = shaolin_android::render_percent;
-    g_android_settings.fps_cap = shaolin_android::fps_cap;
     return g_android_settings;
 }
 std::recursive_mutex& UiLock() {
@@ -32,7 +56,7 @@ std::recursive_mutex& UiLock() {
 void* Window() { return shaolin_android::GameWindow(); }
 Mode Desktop() {
     int w=1280,h=720;
-    if (auto* window = shaolin_android::GameWindow()) SDL_GetWindowSizeInPixels(window,&w,&h);
+    shaolin_android::GameOutputSize(&w, &h);
     return {static_cast<uint32_t>(std::max(w,1)),static_cast<uint32_t>(std::max(h,1))};
 }
 Mode Output() { return Desktop(); }
@@ -65,8 +89,9 @@ void Pace() {
 } // namespace app
 namespace shaolin::paths {
 std::filesystem::path Cache() {
-    if (const char* p = SDL_GetPrefPath("ShaolinMobiu","Xbox")) {
+    if (char* p = SDL_GetPrefPath("ShaolinMobiu","Xbox")) {
         auto dir = std::filesystem::path(p) / "vulkan_cache";
+        SDL_free(p);
         std::error_code ec;
         std::filesystem::create_directories(dir,ec);
         return dir;

@@ -1,4 +1,4 @@
-name: Android ARM64 Shaolin Mobiu preview
+name: Android ARM64 source validation
 on:
   workflow_dispatch:
   push:
@@ -6,13 +6,16 @@ on:
     paths:
       - 'android/**'
       - '.github/workflows/android-arm64-bringup.yml'
+      - 'src/**'
+      - 'tools/prepare_recomp_runtime.py'
+      - 'config/game.toml'
 concurrency:
   group: shaolin-android-preview-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 permissions:
   contents: read
 jobs:
-  android-vulkan-test:
+  android-public-runtime:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -53,12 +56,33 @@ jobs:
           git -C android/third_party/XboxXBERecomp fetch --depth 1 origin 40e9c35451305f09ca9d86f677e4b9c2c37ff26b
           git -C android/third_party/XboxXBERecomp checkout --detach FETCH_HEAD
           test -f android/third_party/XboxXBERecomp/runtime/kernel/disc.cpp
-      - name: Build Android Vulkan test APK
+      - name: Prepare public runtime sources and metadata
+        run: |
+          python3 tools/prepare_recomp_runtime.py --sdk android/third_party/XboxXBERecomp --out build/android-check/adapted
+          python3 android/ci/prepare_public_headers.py --sdk android/third_party/XboxXBERecomp --out build/android-check/headers
+      - name: Test renderer initialization failure ownership
+        run: |
+          c++ -std=c++20 -Iandroid/third_party/XboxXBERecomp/runtime -Iandroid/app/src/main/cpp android/ci/backend_init_test.cpp -o build/android-check/backend_init_test
+          build/android-check/backend_init_test
+      - name: Compile public GameBoot, Vulkan and GLES sources for ARM64
+        run: |
+          cmake -S android/app/src/main/cpp -B build/android-check/native -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/28.2.13676358/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 \
+            -DSHAOLIN_RUNTIME_COMPILE_CHECK=ON \
+            -DSHAOLIN_ADAPTED="$GITHUB_WORKSPACE/build/android-check/adapted" \
+            -DSHAOLIN_CHECK_HEADERS="$GITHUB_WORKSPACE/build/android-check/headers" \
+            -DSHAOLIN_BUILD_REVISION="$GITHUB_SHA"
+          cmake --build build/android-check/native --target main --parallel 2
+      - name: Compile launcher Java and packaging
         working-directory: android
-        run: gradle --no-daemon assembleDebug --stacktrace
-      - uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: Shaolin-Mobiu-Launcher-ARM64
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+        run: gradle --no-daemon assembleDebug --stacktrace -PshaolinRevision="$GITHUB_SHA"
+      - name: Record validation scope
+        if: always()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          Public GameBoot sources are compiled to ARM64 objects, without proprietary code.
+          The launcher packaging check does not link the translated game.
+          No game APK or generated game code is uploaded.
+          These checks do not validate device boot, images, menu, or gameplay.
+          EOF

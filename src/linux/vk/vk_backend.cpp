@@ -9,6 +9,7 @@
 #include "linux/vk/vk_api.h"
 #ifdef __ANDROID__
 #include "shaolin_game_trace.h"
+#include "android_graphics_host.h"
 #endif
 
 #include <SDL3/SDL.h>
@@ -880,10 +881,31 @@ bool VulkanBackend::Init(uint32_t width, uint32_t height) {
 #endif
     guest_w_ = width;
     guest_h_ = height;
+#ifdef __ANDROID__
+    auto stage = [](const char* name, bool ok) {
+        shaolin_android::Trace("VULKAN_INIT_STAGE %s result=%s", name, ok ? "ok" : "failed");
+        return ok;
+    };
+    bool loader = false;
+    if (!shaolin_android::OnMainThread([&] { loader = vkapi::LoadGlobal(); }) ||
+        !stage("loader", loader)) return false;
+    if (!stage("instance/surface", CreateInstance()) ||
+        !stage("physical-device", PickDevice()) ||
+        !stage("logical-device", CreateDevice()) ||
+        !stage("layouts", CreateLayouts()) ||
+        !stage("frames", CreateFrames()) ||
+        !stage("fixed-images", CreateFixedImages())) return false;
+#else
     if (!vkapi::LoadGlobal() || !CreateInstance() || !PickDevice() || !CreateDevice()) return false;
     if (!CreateLayouts() || !CreateFrames() || !CreateFixedImages()) return false;
+#endif
     swap_vsync_ = app::Get().vsync;
-    if (!CreateSwapchain()) return false;
+    if (!CreateSwapchain()) {
+#ifdef __ANDROID__
+        shaolin_android::Trace("VULKAN_INIT_STAGE swapchain result=failed");
+#endif
+        return false;
+    }
     LoadPipelineCache();
     InitUi();
     scale_ = app::RenderScale(guest_h_);
@@ -898,7 +920,12 @@ bool VulkanBackend::Init(uint32_t width, uint32_t height) {
 
 bool VulkanBackend::CreateInstance() {
     Uint32 count = 0;
-    const char* const* sdl_ext = SDL_Vulkan_GetInstanceExtensions(&count);
+    const char* const* sdl_ext = nullptr;
+#ifdef __ANDROID__
+    if (!shaolin_android::OnMainThread([&] { sdl_ext = SDL_Vulkan_GetInstanceExtensions(&count); })) return false;
+#else
+    sdl_ext = SDL_Vulkan_GetInstanceExtensions(&count);
+#endif
     if (!sdl_ext) {
         LOGE("vulkan: no surface extensions (%s)", SDL_GetError());
         return false;
@@ -940,7 +967,16 @@ bool VulkanBackend::CreateInstance() {
         return false;
     }
     if (!vkapi::LoadInstance(instance_)) return false;
-    if (!SDL_Vulkan_CreateSurface(static_cast<SDL_Window*>(app::Window()), instance_, nullptr, &surface_)) {
+    bool surface_ok = false;
+#ifdef __ANDROID__
+    if (!shaolin_android::OnMainThread([&] {
+        surface_ok = SDL_Vulkan_CreateSurface(static_cast<SDL_Window*>(app::Window()), instance_, nullptr, &surface_);
+        if (!surface_ok) shaolin_android::Trace("VULKAN_SURFACE_FAILED %s", SDL_GetError());
+    })) return false;
+#else
+    surface_ok = SDL_Vulkan_CreateSurface(static_cast<SDL_Window*>(app::Window()), instance_, nullptr, &surface_);
+#endif
+    if (!surface_ok) {
         LOGE("vulkan: no window surface (%s)", SDL_GetError());
         return false;
     }
@@ -983,6 +1019,12 @@ bool VulkanBackend::PickDevice() {
         LOGI("vulkan: device %s, Vulkan %u.%u.%u%s", p.deviceName, VK_API_VERSION_MAJOR(p.apiVersion),
              VK_API_VERSION_MINOR(p.apiVersion), VK_API_VERSION_PATCH(p.apiVersion),
              usable && family >= 0 ? "" : " (not usable: needs Vulkan 1.2, dynamic rendering and a present queue)");
+#ifdef __ANDROID__
+        shaolin_android::Trace("VULKAN_DEVICE vendor=%04x device=%04x api=%u.%u.%u dynamic_rendering=%d swapchain=%d present_queue=%d",
+            p.vendorID, p.deviceID, VK_API_VERSION_MAJOR(p.apiVersion),
+            VK_API_VERSION_MINOR(p.apiVersion), VK_API_VERSION_PATCH(p.apiVersion),
+            dynamic ? 1 : 0, HasExtension(ext, VK_KHR_SWAPCHAIN_EXTENSION_NAME) ? 1 : 0, family);
+#endif
         if (!usable || family < 0) continue;
         int score = 0;
         switch (p.deviceType) {
@@ -1019,6 +1061,10 @@ bool VulkanBackend::CreateDevice() {
         LOGE("vulkan: %s lacks timeline semaphores or dynamic rendering", gpu_props_.deviceName);
         return false;
     }
+#ifdef __ANDROID__
+    shaolin_android::Trace("VULKAN_FEATURES timeline=%d dynamic_rendering=%d",
+                           int(timeline.timelineSemaphore), int(dyn.dynamicRendering));
+#endif
     const VkPhysicalDeviceFeatures& have = f2.features;
     VkPhysicalDeviceFeatures on{};
     on.geometryShader = gs_ok_ = have.geometryShader;
@@ -1073,7 +1119,11 @@ bool VulkanBackend::CreateDevice() {
 
 bool VulkanBackend::CreateSwapchain() {
     int pw = 0, ph = 0;
+#ifdef __ANDROID__
+    shaolin_android::GameOutputSize(&pw, &ph);
+#else
     SDL_GetWindowSizeInPixels(static_cast<SDL_Window*>(app::Window()), &pw, &ph);
+#endif
     VkSurfaceCapabilitiesKHR caps;
     if (vk.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gpu_, surface_, &caps) != VK_SUCCESS) return false;
     VkExtent2D extent = caps.currentExtent;
@@ -3209,7 +3259,11 @@ void VulkanBackend::Copy(const Surface& src, const Surface& dst, uint32_t count,
 // mode change there. Wayland leaves the extent to the swap chain, and SDL's size is the one to follow.
 void VulkanBackend::ResizeSwap() {
     int pw = 0, ph = 0;
+#ifdef __ANDROID__
+    shaolin_android::GameOutputSize(&pw, &ph);
+#else
     SDL_GetWindowSizeInPixels(static_cast<SDL_Window*>(app::Window()), &pw, &ph);
+#endif
     bool vsync = app::Get().vsync;
     static int last_w = 0, last_h = 0;
     bool sdl_changed = pw != last_w || ph != last_h;
@@ -3377,9 +3431,6 @@ void LogPerf() {
 }
 
 void VulkanBackend::Present(const Surface& front) {
-#ifdef __ANDROID__
-    shaolin_android::TracePresent("Vulkan");
-#endif
     PerfScope perf_present{g_perf.present};
     if (g_capture.exchange(false)) LOG_FIRST(1, "capture: frame captures need the Direct3D 12 renderer");
     ResizeSwap();
@@ -3409,6 +3460,10 @@ void VulkanBackend::Present(const Surface& front) {
         pi.pSwapchains = &swap_;
         pi.pImageIndices = &bi;
         VkResult r = vk.vkQueuePresentKHR(queue_, &pi);
+#ifdef __ANDROID__
+        if (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR) shaolin_android::TracePresent("Vulkan");
+        else shaolin_android::Trace("VULKAN_PRESENT_FAILED %s", vkapi::ResultName(r));
+#endif
         if (r == VK_SUBOPTIMAL_KHR || r == VK_ERROR_OUT_OF_DATE_KHR) swap_dirty_ = true;
         else if (r != VK_SUCCESS) LOG_FIRST(8, "vulkan: present failed: %s", vkapi::ResultName(r));
         g_perf.swap += PerfMs(perf_swap);

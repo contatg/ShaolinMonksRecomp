@@ -1,6 +1,5 @@
-// Android SDL3/Vulkan presentation bringup.
-// This is a visible renderer test, NOT an executable Xbox game port.
-// No proprietary game data or generated Xbox code is linked in this build.
+// Android SDL host. Private GameBoot builds execute the translated Xbox title;
+// the public launcher build has no translated game code.
 #include "xbox_bootstrap.h"
 #include <SDL3/SDL.h>
 #ifdef SHAOLIN_REAL_GAME_BOOT
@@ -9,6 +8,7 @@
 #include <string>
 namespace input { void MainThreadEvent(const SDL_Event&); void MainThreadUpdate(); }
 #include "shaolin_game_trace.h"
+#include "android_graphics_host.h"
 namespace shaolin_android {
 void StartXboxLogcat();
 void ConfigureGameRenderer(SDL_Window* window, bool opengl);
@@ -503,6 +503,7 @@ int main(int argc, char** argv) {
     input::Init();
     shaolin_android::Trace("GAMEPAD_INIT_OK");
     shaolin_android::ConfigureGameRenderer(window, use_opengl);
+    shaolin_android::UpdateGameOutput();
     shaolin_android::SetGameRenderPercent(render_preference);
     shaolin_android::SetGameFpsCap(fps_limit);
 #endif
@@ -512,11 +513,12 @@ int main(int argc, char** argv) {
     bool game_boot_started = false;
     if (xbox_image_ready) {
         shaolin_android::StartXboxLogcat();
-        const char* pref = SDL_GetPrefPath("ShaolinMobiu", "Xbox");
+        char* pref = SDL_GetPrefPath("ShaolinMobiu", "Xbox");
         if (!pref || !*pref) {
             SMERR("GAME BOOT: app-private writable data directory unavailable");
         } else {
             const std::string data_dir(pref);
+            SDL_free(pref);
             SMLOG("GAME BOOT: invoking REAL kernel::Boot with original Xbox XBE and mounted D: ISO");
             shaolin_android::Trace("KERNEL_BOOT_BEGIN xbe_bytes=%zu", verified_xbe.size());
             // Guest threads execute independently from SDL's window thread.
@@ -572,10 +574,20 @@ int main(int argc, char** argv) {
                 SMLOG("Xbox gamepad button pressed");
         }
         input::MainThreadUpdate();
-        SDL_Delay(12);
+        shaolin_android::UpdateGameOutput();
+        if (shaolin_android::GraphicsFailed()) {
+            shaolin_android::Trace("GAME_LOOP_STOP graphics initialization failed");
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Shaolin Monks - Graphics",
+                "The game renderer could not initialize. The native trace records the failing stage and GPU capabilities.", window);
+            // The game runs in its own Android process. Guest/renderer workers
+            // must stop before SDL destroys their surface; return to launcher.
+            kernel::Shutdown(5);
+        }
+        SDL_Delay(1);
     }
-    SDL_DestroyWindow(window);
-    SDL_Quit();
+    shaolin_android::Trace("GAME_LOOP_STOP SDL quit");
+    // Kernel threads are detached; do not free their window underneath them.
+    kernel::Shutdown(0);
     return 0;
 #else
     int result = 0;

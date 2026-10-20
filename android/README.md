@@ -1,61 +1,73 @@
-# Shaolin Mobiu — Android ARM64 preview
+# Shaolin Monks Recomp — Android ARM64
 
-The **Shaolin Mobiu Preview** is an Android application with a native launcher:
-- Custom dark/red/gold mobile interface, game-file selector and about dialog.
-- Persisted Android Storage Access Framework permission for selected ISO/XISO/ZIP/XBE files
-  or an extracted game folder. The selection stays on-device in private preferences.
-- Resolution scale preference (50/75/100%) saved for the future game runtime.
-- FPS setting (30/60) forwarded to the current SDL3 Vulkan smoke test.
-- A separate landscape SDL3/Vulkan rendering test with visible animated color;
-  touching the display changes the displayed color.
+The Android launcher keeps game selection, graphics preferences and the Krypt
+mod manager. A private GameBoot build links the owner's translated Xbox code,
+kernel services and the Vulkan/GLES backends. Game execution uses a separate
+Android process so a native failure does not terminate the launcher.
 
-**Important:** No Shaolin Monks game code is linked into the current APK. The file picker
-does not yet cause Xbox game execution. The "Jogar" entry explains this limitation;
-the Vulkan test launches instead through its own button.
+Vulkan uses the maintained Shaolin renderer. It requires Vulkan 1.2, timeline
+semaphores and dynamic rendering (core in 1.3 or the KHR extension).
+Capability and initialization failures are recorded before D3D device creation
+fails. A failed renderer is never submitted to the render worker.
 
-## Download APK
+GLES remains incomplete: it handles pretransformed primitives, clear and swap.
+Programmable shaders, textures and render targets are not fully implemented.
+Audio or successful buffer swaps do not prove that the game is visible.
 
-Open GitHub Actions / Android ARM64 Shaolin Mobiu preview on branch
-`android-arm64-bringup`. Download the most recent successful artifact named
-`Shaolin-Mobiu-Launcher-ARM64` and extract `app-debug.apk`.
+## Continue an existing private build
 
-## Build
-
-The CI workflow builds from `android/` with Gradle 8.7, Android SDK 34,
-Android NDK 28.2.13676358, CMake 3.31.6, JDK 17 and SDL3 3.4.16.
-The native library is compiled only for ARM64.
-
-Inspect the native Vulkan test log:
-
-```sh
-adb logcat -s ShaolinMobiu
-```
-
-## Generate Xbox translation locally on Windows
-
-Use your original USA/Europe Xbox `default.xbe`. SHA-256:
-`48240902bf4a04eb89376217c529531032d3370749bcce91a194878cc49db74a`.
-
-Install Git, Python, CMake, LLVM/Clang, Visual Studio C++ Build Tools and Ninja.
-In PowerShell at the repository root run:
+Keep the private translation and SDK already prepared on this computer.
+Use the current `android-arm64-bringup` checkout.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\android\Preparar-XBE-Android.ps1 -Xbe "C:\Games\Shaolin\default.xbe"
+powershell -ExecutionPolicy Bypass -File .\android\Compilar-APK-Shaolin-ARM64.ps1
+powershell -ExecutionPolicy Bypass -File .\android\Instalar-GameBoot-Coletar-Logs.ps1
 ```
 
-This prepares the 128 C++ partitions in the ignored local folder
-`android/generated/shaolin`; they are not yet compiled into the APK.
-Never upload original Xbox assets, the XBE or locally generated translation to
-the public repo, releases, or CI artifacts.
+Select the original ISO and press Play during capture.
+Test Vulkan first.
+Run a separate capture after choosing GLES to compare the two backends.
+Use `-SkipInstall` on the collector to inspect the installed APK without replacing it.
 
-## To reach the playable build
+The private APK is written to
+`android-local/output/ShaolinMobiu-ARM64-GameBoot.apk`.
+The trace contains the source revision used by the build.
+A successful build is not a device or gameplay test.
 
-1. Adapt the game-specific XboxXBERecomp runtime and generated function dispatcher to ARM64.
-2. Port the existing Shaolin game Vulkan renderer to the Android lifecycle and surface.
-3. Connect URI-based disc access, audio, saves, gamepads and touch controls.
-4. Validate the menu, cinematics, rendering and real gameplay on physical Android devices.
+## Diagnostics
 
-The PC build on `main` is unaffected.
+Each capture uses a new timestamped directory below
+`android-local/gameboot-logs/`. The ZIP contains the private native trace,
+filtered Android logs and process exit information.
 
-References: [OAleex/ShaolinMonksRecomp](https://github.com/OAleex/ShaolinMonksRecomp)
-and [RanggaCasper/Black-Android](https://github.com/RanggaCasper/Black-Android).
+Relevant trace events:
+
+| Event | Evidence |
+| --- | --- |
+| `ISO_LOAD_DONE success=1` | Original XBE was read and verified |
+| `KERNEL_BOOT_RETURNED_TRUE` | Guest thread was scheduled |
+| `VULKAN_DEVICE` | Reported GPU API and extension capabilities |
+| `VULKAN_INIT_STAGE` | Completed or failed initialization stage |
+| `GRAPHICS_FATAL` | Renderer initialization failed |
+| `KERNEL_SHUTDOWN` | Kernel requested a process exit |
+| `REAL_XBOX_D3D8_PRESENT` | The graphics API accepted a presentation |
+
+Presentation counts do not prove visible or correct frames.
+Kernel messages are written synchronously so an immediate process exit cannot
+outrun a background stderr reader.
+Native signals are still handled by Android; they are not suppressed.
+
+## Automated checks
+
+The Android Actions workflow runs a renderer initialization ownership regression,
+compiles public GameBoot/kernel/D3D/Vulkan/GLES sources to ARM64 objects, and
+checks launcher packaging. Public ABI headers come from the checked-in config
+and pinned SDK metadata. No original game is read or translated in CI.
+The object check does not link a playable game and uploads no APK.
+
+Use a physical device and the private build to verify initialization, visible
+menu, input, cinematics, gameplay, audio, suspend/resume, saves and enabled mods.
+Record these results separately from compile checks.
+
+Original ISO/XBE files, generated game translation, saves and device logs must
+stay outside public source and CI artifacts.

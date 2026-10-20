@@ -2,21 +2,23 @@
 # logs. Some MIUI builds suppress app logcat: run-as reads the debug APK's
 # internal trace without root, ROM extraction, or broad-storage access.
 [CmdletBinding()]
-param([ValidateRange(15,180)][int]$Seconds=75)
+param([ValidateRange(15,180)][int]$Seconds=75, [switch]$SkipInstall)
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $adb=Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
 $apk=Join-Path $root 'android-local\output\ShaolinMobiu-ARM64-GameBoot.apk'
 $package='org.shaolinmobiu'
 if(!(Test-Path -LiteralPath $adb)){throw "adb.exe missing at $adb"}
-if(!(Test-Path -LiteralPath $apk)){throw "GameBoot APK missing at $apk. Compile the private APK first."}
+if(!$SkipInstall -and !(Test-Path -LiteralPath $apk)){throw "GameBoot APK missing at $apk. Compile the private APK first."}
 $devices=@(& $adb devices | Select-String -Pattern '\tdevice$')
 if($devices.Count -ne 1){throw 'Connect exactly one authorized Android device (adb devices).'}
-$dir=Join-Path $root 'android-local\gameboot-logs'
+$dir=Join-Path $root ('android-local\gameboot-logs\' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -Force -ItemType Directory -Path $dir | Out-Null
-Write-Host 'Installing PRIVATE Xbox GameBoot APK without deleting app data or ISO permission...'
-& $adb install -r $apk
-if($LASTEXITCODE -ne 0){throw 'APK installation failed; original app data preserved.'}
+if (!$SkipInstall) {
+    Write-Host 'Installing PRIVATE Xbox GameBoot APK without deleting app data or ISO permission...'
+    & $adb install -r $apk
+    if($LASTEXITCODE -ne 0){throw 'APK installation failed; original app data preserved.'}
+}
 & $adb logcat -c
 $activityOutput=@(& $adb shell am start -n "$package/.LauncherActivity")
 $activityOutput | ForEach-Object {Write-Host $_}
@@ -54,8 +56,14 @@ try {
         (& $adb shell pm path $package)
         '=== ACTIVITY START RESULT ==='
         $activityOutput
-        '=== PROCESS PID ==='
+        '=== LAUNCHER PROCESS PID ==='
         (& $adb shell pidof $package)
+        '=== GAME PROCESS PID ==='
+        (& $adb shell pidof "${package}:game")
+        '=== DEVICE AND HOST PAGE SIZE ==='
+        (& $adb shell getprop ro.product.model)
+        (& $adb shell getprop ro.build.version.release)
+        (& $adb shell getconf PAGE_SIZE)
         '=== FOREGROUND ACTIVITY ==='
         (& $adb shell dumpsys activity activities | Select-String -Pattern 'mResumedActivity|topResumedActivity|org.shaolinmobiu' | Select-Object -First 35 | ForEach-Object { "$_" })
         '=== ANDROID PROCESS EXIT REASONS ==='

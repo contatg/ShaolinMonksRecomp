@@ -152,10 +152,12 @@ if(SHAOLIN_ENABLE_GUEST_OBJECTS)
     # the actual Xbox boot coordinator and host file service separately.
     # These depend on game-specific graphics/input/host services, so keep
     # them isolated until those dependencies are implemented.
+    shaolin_prepare_android_boot(SHAOLIN_ANDROID_BOOT_CPP)
     add_library(shaolin_xbox_boot_arm64 OBJECT EXCLUDE_FROM_ALL
-        "${XBE_SDK}/runtime/kernel/boot.cpp"
+        "${SHAOLIN_ANDROID_BOOT_CPP}"
         "${XBE_SDK}/runtime/kernel/files.cpp")
     target_include_directories(shaolin_xbox_boot_arm64 PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
         "${XBE_SDK}/runtime" "${SHAOLIN_PRIVATE_GEN}"
         "${SHAOLIN_REPO_ROOT}/src")
     target_compile_options(shaolin_xbox_boot_arm64 PRIVATE

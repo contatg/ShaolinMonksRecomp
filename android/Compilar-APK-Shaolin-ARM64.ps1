@@ -56,6 +56,8 @@ $localProps=Join-Path $PSScriptRoot 'local.properties'
     [System.Text.UTF8Encoding]::new($false))
 Write-Host "Android SDK configured locally: $androidSdkHome"
 
+$revision = (& git -C $root rev-parse --short=12 HEAD)
+if ($LASTEXITCODE -ne 0) { throw 'Cannot determine the source revision.' }
 Write-Host 'Building PRIVATE ARM64 APK with genuine Xbox kernel::Boot and actual game entry thread.'
 Write-Host 'Original 128 C++ partitions will be reused; only changed targets are rebuilt.'
 Write-Host 'Public launcher and Krypt manager source code are kept intact.'
@@ -66,7 +68,7 @@ try {
     $savedPreference=$ErrorActionPreference
     try {
         $ErrorActionPreference='Continue'
-        & $gradle '--no-daemon' '-PshaolinNativeGame=true' 'assembleDebug' '--stacktrace' 2>&1 |
+        & $gradle '--no-daemon' '-PshaolinNativeGame=true' "-PshaolinRevision=$revision" 'assembleDebug' '--stacktrace' 2>&1 |
             ForEach-Object { "$_" } | Tee-Object -FilePath $log
         $exitCode=$LASTEXITCODE
     } finally { $ErrorActionPreference=$savedPreference }

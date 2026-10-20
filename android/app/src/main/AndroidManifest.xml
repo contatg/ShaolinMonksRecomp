@@ -21,6 +21,7 @@
             android:exported="false"
             android:screenOrientation="portrait" />
         <activity android:name=".ShaolinActivity"
+            android:process=":game"
             android:exported="false"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|screenLayout|layoutDirection|locale"
