@@ -131,6 +131,22 @@ if(SHAOLIN_ENABLE_GUEST_OBJECTS)
     set_target_properties(shaolin_krypt_routines_arm64 PROPERTIES
         POSITION_INDEPENDENT_CODE ON)
 
+    # Genuine Xbox kernel, object manager, thread scheduler and RTL services.
+    # Build as isolated ARM64 objects first: this exposes source-level ARM64
+    # incompatibilities without changing the tested launcher binary.
+    add_library(shaolin_xbox_kernel_arm64 OBJECT EXCLUDE_FROM_ALL
+        "${XBE_SDK}/runtime/kernel/objects.cpp"
+        "${XBE_SDK}/runtime/kernel/threads.cpp"
+        "${XBE_SDK}/runtime/kernel/rtl.cpp"
+        "${XBE_SDK}/runtime/kernel/xboxkrnl.cpp")
+    target_include_directories(shaolin_xbox_kernel_arm64 PRIVATE
+        "${XBE_SDK}/runtime" "${SHAOLIN_PRIVATE_GEN}"
+        "${SHAOLIN_REPO_ROOT}/src")
+    target_compile_options(shaolin_xbox_kernel_arm64 PRIVATE
+        -O1 -fno-strict-aliasing)
+    set_target_properties(shaolin_xbox_kernel_arm64 PROPERTIES
+        POSITION_INDEPENDENT_CODE ON)
+
     # Build a genuine Android shared-library link probe with all recompiled
     # guest functions + Xbox CPU dispatch + original Krypt Lua engine.
     # This deliberately has NO game-entry invocation and is NOT packaged into
