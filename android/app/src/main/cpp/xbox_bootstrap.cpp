@@ -20,8 +20,14 @@
 #include <unistd.h>
 #include <vector>
 
+#ifdef SHAOLIN_REAL_GAME_BOOT
+#include "shaolin_game_trace.h"
+#define XB_INFO(...) do { __android_log_print(ANDROID_LOG_INFO, "ShaolinXbox", __VA_ARGS__); shaolin_android::Trace(__VA_ARGS__); } while (0)
+#define XB_ERR(...) do { __android_log_print(ANDROID_LOG_ERROR, "ShaolinXbox", __VA_ARGS__); shaolin_android::Trace(__VA_ARGS__); } while (0)
+#else
 #define XB_INFO(...) __android_log_print(ANDROID_LOG_INFO, "ShaolinXbox", __VA_ARGS__)
 #define XB_ERR(...) __android_log_print(ANDROID_LOG_ERROR, "ShaolinXbox", __VA_ARGS__)
+#endif
 
 namespace shaolin_android {
 namespace {
