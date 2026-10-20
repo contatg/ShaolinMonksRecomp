@@ -507,6 +507,7 @@ int main(int argc, char** argv) {
     // Start Xbox CPU boot independently of graphics. If a device's Vulkan
     // swapchain fails, the real boot still runs and produces useful logs.
 #ifdef SHAOLIN_REAL_GAME_BOOT
+    bool game_boot_started = false;
     if (xbox_image_ready) {
         shaolin_android::StartXboxLogcat();
         const char* pref = SDL_GetPrefPath("ShaolinMobiu", "Xbox");
@@ -525,12 +526,23 @@ int main(int argc, char** argv) {
             } else {
                 SMLOG("GAME BOOT STARTED: Xbox guest entry thread launched; inspect ShaolinXboxKernel");
                 shaolin_android::Trace("KERNEL_BOOT_RETURNED_TRUE guest thread scheduled");
+                game_boot_started = true;
             }
         }
     }
 #endif
 
 #ifdef SHAOLIN_REAL_GAME_BOOT
+    if (!game_boot_started) {
+        shaolin_android::Trace("GAMEBOOT_ABORT before event loop: Xbox kernel did not start");
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+                                 "Shaolin Monks - Falha no boot Xbox",
+                                 "O kernel Xbox não iniciou. Consulte o log GameBoot para identificar a falha.",
+                                 window);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 4;
+    }
     // The guest's Direct3D_CreateDevice initializes the selected REAL game
     // renderer. Never execute the old animated smoke-test Renderer::Frame.
     SMLOG("GAME RENDER ACTIVE: Xbox D3D8 draw/present -> %s; waiting for guest frames",
