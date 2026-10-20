@@ -324,7 +324,7 @@ final class ModStore {
         if(!root.exists() && !root.mkdirs())throw new IOException("Mods storage unavailable");
         File tmp=File.createTempFile("index-",".tmp",root);
         try(FileOutputStream output=new FileOutputStream(tmp)){
-            output.write(state.toString(2).getBytes(StandardCharsets.UTF_8));
+            output.write(state.toString().getBytes(StandardCharsets.UTF_8));
             output.getFD().sync();
         }
         if(!tmp.renameTo(registry)){ // some filesystems require deleting old destination first
