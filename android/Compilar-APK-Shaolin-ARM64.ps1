@@ -71,7 +71,24 @@ try {
         $exitCode=$LASTEXITCODE
     } finally { $ErrorActionPreference=$savedPreference }
     if ($exitCode -ne 0) {
-        throw "Android native APK build failed ($exitCode). Send the first compiler/linker errors from $log."
+        # Gradle's last 100 lines are Java stack frames, not the NDK failure.
+        # Surface original clang/CMake/ninja errors so we can fix the actual
+        # D3D8/Vulkan/GLES compile without another blind rebuild.
+        $diagnostics = @(
+            Get-Content -LiteralPath $log |
+            Where-Object {
+                $_ -match '(?i)(?:fatal error:|\\berror:|FAILED: CMakeFiles|CMake Error|undefined symbol:|ninja: error:|error: linker command failed)' -and
+                $_ -notmatch 'gradle\\.api|org\\.gradle|System\\.Management\\.Automation|Execution failed for task'
+            } |
+            Select-Object -Unique -First 35
+        )
+        $errorFile = Join-Path $logDir 'gameboot-native-errors.txt'
+        if ($diagnostics.Count) {
+            $diagnostics | Set-Content -LiteralPath $errorFile -Encoding UTF8
+            Write-Host '===== REAL NDK / CMAKE BUILD ERRORS =====' -ForegroundColor Yellow
+            $diagnostics | ForEach-Object { Write-Host $_ -ForegroundColor Yellow }
+        }
+        throw "Android game APK build failed ($exitCode). Send $errorFile (or first compiler errors from $log)."
     }
 } finally { Pop-Location }
 $apk = Join-Path $PSScriptRoot 'app\build\outputs\apk\debug\app-debug.apk'
