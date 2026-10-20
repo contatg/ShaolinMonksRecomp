@@ -429,7 +429,7 @@ int main(int argc, char** argv) {
         SMERR("SDL_Init: %s", SDL_GetError());
         return 1;
     }
-    SDL_Window* window = SDL_CreateWindow("Shaolin Mobiu - Vulkan smoke test", 0, 0,
+    SDL_Window* window = SDL_CreateWindow("Shaolin Monks - Xbox ARM64 Boot", 0, 0,
                                            SDL_WINDOW_VULKAN | SDL_WINDOW_FULLSCREEN |
                                            SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (!window) {
@@ -440,27 +440,31 @@ int main(int argc, char** argv) {
     // Start Xbox CPU boot independently of graphics. If a device's Vulkan
     // swapchain fails, the real boot still runs and produces useful logs.
 #ifdef SHAOLIN_REAL_GAME_BOOT
-if (xbox_image_ready) {
-    shaolin_android::StartXboxLogcat();
-    const char* pref = SDL_GetPrefPath("ShaolinMobiu", "Xbox");
-    const std::string data_dir = pref && *pref ? std::string(pref) : std::string("/data/local/tmp");
-    SMLOG("GAME BOOT: invoking REAL kernel::Boot with original Xbox XBE and mounted D: ISO");
-    // Guest threads execute independently from SDL's window thread.
-    // kernel::Boot returns after scheduling the first guest CPU entry.
-    if (!kernel::Boot(std::move(verified_xbe), "default.xbe",
-                      data_dir + "/disc", data_dir + "/hdd")) {
-        SMERR("GAME BOOT FAILED: kernel::Boot returned false; inspect ShaolinXboxKernel");
-    } else {
-        SMLOG("GAME BOOT STARTED: Xbox guest entry thread launched; inspect ShaolinXboxKernel");
+    if (xbox_image_ready) {
+        shaolin_android::StartXboxLogcat();
+        const char* pref = SDL_GetPrefPath("ShaolinMobiu", "Xbox");
+        if (!pref || !*pref) {
+            SMERR("GAME BOOT: app-private writable data directory unavailable");
+        } else {
+            const std::string data_dir(pref);
+            SMLOG("GAME BOOT: invoking REAL kernel::Boot with original Xbox XBE and mounted D: ISO");
+            // Guest threads execute independently from SDL's window thread.
+            // kernel::Boot returns after scheduling the first guest CPU entry.
+            if (!kernel::Boot(std::move(verified_xbe), "default.xbe",
+                              data_dir + "/disc", data_dir + "/hdd")) {
+                SMERR("GAME BOOT FAILED: kernel::Boot returned false; inspect ShaolinXboxKernel");
+            } else {
+                SMLOG("GAME BOOT STARTED: Xbox guest entry thread launched; inspect ShaolinXboxKernel");
+            }
+        }
     }
-}
 #endif
 
     int result = 0;
     {
         Renderer renderer;
         if (!renderer.Init(window)) {
-            SMERR("Vulkan renderer startup failed. Original Shaolin code NOT running.");
+            SMERR("Android Vulkan presentation failed. Check ShaolinXboxKernel for independently started Xbox guest thread.");
             result = 3;
         } else {
 #ifndef SHAOLIN_REAL_GAME_BOOT
@@ -487,7 +491,7 @@ if (xbox_image_ready) {
                         case SDL_EVENT_FINGER_DOWN:
                         case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
                             orange = !orange;
-                            SMLOG("Input registered, touch color=%s", orange ? "orange" : "purple");
+                            SMLOG("SDL input event; Xbox controller/XAPI mapping not yet connected");
                             break;
                         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
                             if (foreground && !renderer.RecreateSwapchain()) alive = false;
